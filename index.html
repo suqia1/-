@@ -1,32 +1,11 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-<script>
- <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
-<script>
-  const supabaseUrl = 'https://vzcpzqyofvphapqtvjlb.supabase.co'
-  const supabaseAnonKey = 'sb_publishable_ZRV5564bW3Tmw9TBG__3QA_1TQilUpm'
-  
-  const supabase = supabase.createClient(supabaseUrl, supabaseAnonKey)
-
-  supabase
-    .channel('public:ضيف المدينة')
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'ضيف المدينة' }, payload => {
-      console.log('تم تغيير البيانات:', payload)
-    })
-  }
-};
-window.addEventListener('unhandledrejection', function(e){
-  var msg = (e.reason && e.reason.message) ? e.reason.message : String(e.reason);
-  document.body.insertAdjacentHTML('afterbegin',
-    '<div style="background:#e67e00;color:#fff;padding:16px;font-size:14px;white-space:pre-wrap;direction:ltr;text-align:left;position:relative;z-index:99999">' +
-    'PROMISE ERROR: ' + msg + '</div>');
-});
-</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="light only">
 <title>ضيف المدينة · نظام إدارة توزيع مياه المساجد</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@500;700;800;900&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -390,13 +369,6 @@ window.addEventListener('unhandledrejection', function(e){
 </div>
 <div class="toast-wrap" id="toastWrap"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script>
-/* ============ SUPABASE ============ */
-const SUPABASE_URL = "https://ecrgrlqnfvtplhxgnifqb.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_ZRVS564bN3Tm9T8G__3QA_1TQlLUpw";
-const sb = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
-</script>
 <script>
 /* ============ CONFIG ============ */
 let MOSQUES = [
@@ -600,44 +572,32 @@ function formatTime12(t){
 }
 
 /* ============ STORAGE HELPERS ============ */
-/* All key/value pairs are pulled from Supabase ONCE at boot (a single bulk
-   request) into an in-memory cache. After that, every storageGet reads
-   instantly from the cache (no network round-trip per read — this is what
-   was making every page feel slow/frozen). storageSet updates the cache and
-   localStorage immediately (so the UI never waits), and pushes the change to
-   Supabase in the background without blocking. Other devices pick up changes
-   the next time they load/refresh the page (which re-runs the bulk fetch). */
+/* Uses Claude's built-in persistent storage when this page runs inside a
+   Claude artifact. When opened as a normal downloaded/hosted HTML file
+   (window.storage isn't available there), it falls back to the browser's
+   own localStorage so the app still works and still remembers data. */
 const memoryFallback = {};
-const kvCache = {};
-let kvCacheReady = false;
 function hasClaudeStorage(){
   return typeof window !== 'undefined' && window.storage && typeof window.storage.get === 'function';
 }
-function withTimeout(promise, ms){
-  return Promise.race([
-    promise,
-    new Promise((_, reject)=>setTimeout(()=>reject(new Error('supabase timeout')), ms))
-  ]);
-}
-async function preloadKvCache(){
-  if(!sb){ kvCacheReady = true; return; }
-  try{
-    const {data, error} = await withTimeout(sb.from('kv_store').select('key,value'), 8000);
-    if(!error && data){
-      data.forEach(row=>{ kvCache[row.key] = row.value; });
-    }
-  }catch(e){ /* Supabase unreachable/slow — proceed with whatever is cached (likely empty) */ }
-  kvCacheReady = true;
-}
+const SUPABASE_URL = 'https://ecrglqnfvtplhxgmifqb.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_ZRVS564bW3Tmw9TBG__3QA_1TQiLUpm';
+let supabaseClient = null;
+try{
+  if(window.supabase && SUPABASE_URL && SUPABASE_ANON_KEY){
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  }
+}catch(e){ supabaseClient = null; }
 async function storageGet(key){
-  if(kvCacheReady){
-    if(kvCache[key] !== undefined) return kvCache[key];
-  }else if(sb){
-    // Cache not loaded yet (shouldn't normally happen — boot() awaits preloadKvCache first)
+  if(supabaseClient){
     try{
-      const {data, error} = await withTimeout(sb.from('kv_store').select('value').eq('key', key).maybeSingle(), 4000);
-      if(!error && data && data.value != null) return data.value;
-    }catch(e){ /* fall through */ }
+      const { data, error } = await supabaseClient.from('kv_store').select('value').eq('key', key).maybeSingle();
+      if(!error && data && data.value != null){
+        try{ localStorage.setItem('saqya::'+key, data.value); }catch(e){}
+        return data.value;
+      }
+      if(!error && !data) return null; // confirmed: key genuinely doesn't exist yet
+    }catch(e){ /* network/connection issue — fall through to local cache below */ }
   }
   if(hasClaudeStorage()){
     try{
@@ -652,17 +612,24 @@ async function storageGet(key){
   return memoryFallback[key] !== undefined ? memoryFallback[key] : null;
 }
 async function storageSet(key, val){
-  kvCache[key] = val;
-  try{ localStorage.setItem('saqya::'+key, val); }catch(e){ /* ignore */ }
-  memoryFallback[key] = val;
-  if(sb){
-    // fire-and-forget: don't make the UI wait on the network
-    withTimeout(sb.from('kv_store').upsert({key, value: val, updated_at: new Date().toISOString()}), 8000)
-      .catch(e=>{ /* will just retry next save; local copy is already safe */ });
+  let ok = false;
+  if(supabaseClient){
+    try{
+      const { error } = await supabaseClient.from('kv_store').upsert({ key, value: val, updated_at: new Date().toISOString() });
+      ok = !error;
+    }catch(e){ ok = false; }
   }
   if(hasClaudeStorage()){
-    window.storage.set(key, val, true).catch(e=>{});
+    try{
+      const r = await window.storage.set(key, val, true);
+      ok = ok || !!r;
+    }catch(e){ /* ignore */ }
   }
+  try{
+    localStorage.setItem('saqya::'+key, val);
+    ok = true;
+  }catch(e){ /* ignore */ }
+  memoryFallback[key] = val;
   return true;
 }
 function safeParse(str, fallback){
@@ -1276,7 +1243,6 @@ const app = document.getElementById('app');
 
 async function boot(){
   app.innerHTML = `<div class="login-shell"><div class="col" style="align-items:center;gap:10px;color:#8a8377"><div>جارٍ التحميل…</div></div></div>`;
-  await preloadKvCache();
   await ensureSeed();
   await Promise.all([loadUsers(), loadCollaborators(), loadLogo(), loadMosques(), loadSiteName(), loadSiteSubtitle(), loadShowDemoHint(), loadDemoHintText(), loadReportBackgrounds(), loadPdfOrientations(), loadPdfSizing(), loadFormConfigs(), loadSidebarLabels(), loadSidebarOrder(), loadMonthlyOrderLabels(), loadIndicatorLabels(), loadCollabLabels(), loadBgModeLabels(), loadModePillLabels(), loadRoleLabels(), loadReportHeaderConfig(), loadMonthlyColumnLabels(), loadMonthlyTableVisibility(), loadAttendLog(), loadPresenceSettings(), loadPendingCollaborators(), loadGsSidebarOrder(), loadNotifCounters(), loadSupplierOrderLabels(), loadSupplierAccountLabels(), loadWarehouseLabels(), loadDriverLabels()]);
   document.title = state.siteName + ' · نظام إدارة توزيع مياه المساجد';
