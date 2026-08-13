@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
+  <script src="[https://unpkg.com/@supabase/supabase-js@2](https://unpkg.com/@supabase/supabase-js@2)"></script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="light only">
@@ -9091,6 +9092,10 @@ async function saveSupervisorRecord(){
 
 /* ============ START ============ */
 boot();
+<script>
+  const SUPABASE_URL = 'https://ecrglqnfvtplhxgmifqb.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_ZRVS564bW3Tmw9TBG__3QA_1TQiLUpm';
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 </script>
 </body>
 </html>
