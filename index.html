@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-  <script>
+<script>
 window.onerror = function(msg, url, line, col, error){
   document.addEventListener('DOMContentLoaded', function(){
     document.body.insertAdjacentHTML('afterbegin',
@@ -390,6 +390,13 @@ window.addEventListener('unhandledrejection', function(e){
 </div>
 <div class="toast-wrap" id="toastWrap"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* ============ SUPABASE ============ */
+const SUPABASE_URL = "https://ecrgrlqnfvtplhxgnifqb.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_ZRVS564bN3Tm9T8G__3QA_1TQlLUpw";
+const sb = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+</script>
 <script>
 /* ============ CONFIG ============ */
 let MOSQUES = [
@@ -593,15 +600,21 @@ function formatTime12(t){
 }
 
 /* ============ STORAGE HELPERS ============ */
-/* Uses Claude's built-in persistent storage when this page runs inside a
-   Claude artifact. When opened as a normal downloaded/hosted HTML file
-   (window.storage isn't available there), it falls back to the browser's
-   own localStorage so the app still works and still remembers data. */
+/* Primary store is Supabase (table kv_store: key text primary key, value text)
+   so all users/devices share the same data. Falls back to Claude's built-in
+   storage (inside a Claude artifact), then to the browser's own localStorage,
+   so the app still works offline or if Supabase is unreachable. */
 const memoryFallback = {};
 function hasClaudeStorage(){
   return typeof window !== 'undefined' && window.storage && typeof window.storage.get === 'function';
 }
 async function storageGet(key){
+  if(sb){
+    try{
+      const {data, error} = await sb.from('kv_store').select('value').eq('key', key).maybeSingle();
+      if(!error && data && data.value != null) return data.value;
+    }catch(e){ /* fall through to other fallbacks */ }
+  }
   if(hasClaudeStorage()){
     try{
       const r = await window.storage.get(key, true);
@@ -616,11 +629,17 @@ async function storageGet(key){
 }
 async function storageSet(key, val){
   let ok = false;
+  if(sb){
+    try{
+      const {error} = await sb.from('kv_store').upsert({key, value: val, updated_at: new Date().toISOString()});
+      ok = !error;
+    }catch(e){ ok = false; }
+  }
   if(hasClaudeStorage()){
     try{
       const r = await window.storage.set(key, val, true);
-      ok = !!r;
-    }catch(e){ ok = false; }
+      ok = ok || !!r;
+    }catch(e){ /* ignore */ }
   }
   try{
     localStorage.setItem('saqya::'+key, val);
