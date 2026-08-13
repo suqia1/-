@@ -600,11 +600,16 @@ function formatTime12(t){
 }
 
 /* ============ STORAGE HELPERS ============ */
-/* Primary store is Supabase (table kv_store: key text primary key, value text)
-   so all users/devices share the same data. Falls back to Claude's built-in
-   storage (inside a Claude artifact), then to the browser's own localStorage,
-   so the app still works offline or if Supabase is unreachable. */
+/* All key/value pairs are pulled from Supabase ONCE at boot (a single bulk
+   request) into an in-memory cache. After that, every storageGet reads
+   instantly from the cache (no network round-trip per read — this is what
+   was making every page feel slow/frozen). storageSet updates the cache and
+   localStorage immediately (so the UI never waits), and pushes the change to
+   Supabase in the background without blocking. Other devices pick up changes
+   the next time they load/refresh the page (which re-runs the bulk fetch). */
 const memoryFallback = {};
+const kvCache = {};
+let kvCacheReady = false;
 function hasClaudeStorage(){
   return typeof window !== 'undefined' && window.storage && typeof window.storage.get === 'function';
 }
@@ -614,12 +619,25 @@ function withTimeout(promise, ms){
     new Promise((_, reject)=>setTimeout(()=>reject(new Error('supabase timeout')), ms))
   ]);
 }
+async function preloadKvCache(){
+  if(!sb){ kvCacheReady = true; return; }
+  try{
+    const {data, error} = await withTimeout(sb.from('kv_store').select('key,value'), 8000);
+    if(!error && data){
+      data.forEach(row=>{ kvCache[row.key] = row.value; });
+    }
+  }catch(e){ /* Supabase unreachable/slow — proceed with whatever is cached (likely empty) */ }
+  kvCacheReady = true;
+}
 async function storageGet(key){
-  if(sb){
+  if(kvCacheReady){
+    if(kvCache[key] !== undefined) return kvCache[key];
+  }else if(sb){
+    // Cache not loaded yet (shouldn't normally happen — boot() awaits preloadKvCache first)
     try{
       const {data, error} = await withTimeout(sb.from('kv_store').select('value').eq('key', key).maybeSingle(), 4000);
       if(!error && data && data.value != null) return data.value;
-    }catch(e){ /* fall through to other fallbacks */ }
+    }catch(e){ /* fall through */ }
   }
   if(hasClaudeStorage()){
     try{
@@ -634,24 +652,17 @@ async function storageGet(key){
   return memoryFallback[key] !== undefined ? memoryFallback[key] : null;
 }
 async function storageSet(key, val){
-  let ok = false;
+  kvCache[key] = val;
+  try{ localStorage.setItem('saqya::'+key, val); }catch(e){ /* ignore */ }
+  memoryFallback[key] = val;
   if(sb){
-    try{
-      const {error} = await withTimeout(sb.from('kv_store').upsert({key, value: val, updated_at: new Date().toISOString()}), 4000);
-      ok = !error;
-    }catch(e){ ok = false; }
+    // fire-and-forget: don't make the UI wait on the network
+    withTimeout(sb.from('kv_store').upsert({key, value: val, updated_at: new Date().toISOString()}), 8000)
+      .catch(e=>{ /* will just retry next save; local copy is already safe */ });
   }
   if(hasClaudeStorage()){
-    try{
-      const r = await window.storage.set(key, val, true);
-      ok = ok || !!r;
-    }catch(e){ /* ignore */ }
+    window.storage.set(key, val, true).catch(e=>{});
   }
-  try{
-    localStorage.setItem('saqya::'+key, val);
-    ok = true;
-  }catch(e){ /* ignore */ }
-  memoryFallback[key] = val;
   return true;
 }
 function safeParse(str, fallback){
@@ -1265,6 +1276,7 @@ const app = document.getElementById('app');
 
 async function boot(){
   app.innerHTML = `<div class="login-shell"><div class="col" style="align-items:center;gap:10px;color:#8a8377"><div>جارٍ التحميل…</div></div></div>`;
+  await preloadKvCache();
   await ensureSeed();
   await Promise.all([loadUsers(), loadCollaborators(), loadLogo(), loadMosques(), loadSiteName(), loadSiteSubtitle(), loadShowDemoHint(), loadDemoHintText(), loadReportBackgrounds(), loadPdfOrientations(), loadPdfSizing(), loadFormConfigs(), loadSidebarLabels(), loadSidebarOrder(), loadMonthlyOrderLabels(), loadIndicatorLabels(), loadCollabLabels(), loadBgModeLabels(), loadModePillLabels(), loadRoleLabels(), loadReportHeaderConfig(), loadMonthlyColumnLabels(), loadMonthlyTableVisibility(), loadAttendLog(), loadPresenceSettings(), loadPendingCollaborators(), loadGsSidebarOrder(), loadNotifCounters(), loadSupplierOrderLabels(), loadSupplierAccountLabels(), loadWarehouseLabels(), loadDriverLabels()]);
   document.title = state.siteName + ' · نظام إدارة توزيع مياه المساجد';
