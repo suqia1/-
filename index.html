@@ -14,19 +14,6 @@
     .on('postgres_changes', { event: '*', schema: 'public', table: 'ضيف المدينة' }, payload => {
       console.log('تم تغيير البيانات:', payload)
     })
-    .subscribe()
-</script>
-  document.addEventListener('DOMContentLoaded', function(){
-    document.body.insertAdjacentHTML('afterbegin',
-      '<div style="background:#c00;color:#fff;padding:16px;font-size:14px;white-space:pre-wrap;direction:ltr;text-align:left;position:relative;z-index:99999">' +
-      'JS ERROR: ' + msg + '\nLine: ' + line + '\n' + (error && error.stack ? error.stack : '') +
-      '</div>');
-  });
-  if(document.readyState !== 'loading'){
-    document.body.insertAdjacentHTML('afterbegin',
-      '<div style="background:#c00;color:#fff;padding:16px;font-size:14px;white-space:pre-wrap;direction:ltr;text-align:left;position:relative;z-index:99999">' +
-      'JS ERROR: ' + msg + '\nLine: ' + line + '\n' + (error && error.stack ? error.stack : '') +
-      '</div>');
   }
 };
 window.addEventListener('unhandledrejection', function(e){
