@@ -608,10 +608,16 @@ const memoryFallback = {};
 function hasClaudeStorage(){
   return typeof window !== 'undefined' && window.storage && typeof window.storage.get === 'function';
 }
+function withTimeout(promise, ms){
+  return Promise.race([
+    promise,
+    new Promise((_, reject)=>setTimeout(()=>reject(new Error('supabase timeout')), ms))
+  ]);
+}
 async function storageGet(key){
   if(sb){
     try{
-      const {data, error} = await sb.from('kv_store').select('value').eq('key', key).maybeSingle();
+      const {data, error} = await withTimeout(sb.from('kv_store').select('value').eq('key', key).maybeSingle(), 4000);
       if(!error && data && data.value != null) return data.value;
     }catch(e){ /* fall through to other fallbacks */ }
   }
@@ -631,7 +637,7 @@ async function storageSet(key, val){
   let ok = false;
   if(sb){
     try{
-      const {error} = await sb.from('kv_store').upsert({key, value: val, updated_at: new Date().toISOString()});
+      const {error} = await withTimeout(sb.from('kv_store').upsert({key, value: val, updated_at: new Date().toISOString()}), 4000);
       ok = !error;
     }catch(e){ ok = false; }
   }
