@@ -8258,10 +8258,12 @@ async function renderSupervisorMain(){
   if(jumpBtn) jumpBtn.addEventListener('click', ()=>{ state.supDate = state.today; renderSupervisorMain(); });
 
   const on = (id, ev, fn)=>{ const el = document.getElementById(id); if(el) el.addEventListener(ev, fn); };
-  on('f_opening','input', updateStats);
-  on('f_new','input', updateStats);
-  on('f_qtyReceived','input', updateStats);
-  on('f_tankerTimeReset','click', ()=>{ const el=document.getElementById('f_tankerTime'); if(el) el.value=''; });
+  on('f_opening','input', ()=>{ supRecord.openingStock = Number(document.getElementById('f_opening').value)||0; updateStats(); });
+  on('f_new','input', ()=>{ supRecord.newCartons = Number(document.getElementById('f_new').value)||0; updateStats(); });
+  on('f_qtyReceived','input', ()=>{ supRecord.qtyReceived = Number(document.getElementById('f_qtyReceived').value)||0; updateStats(); });
+  on('f_tankerTime','input', ()=>{ supRecord.tankerArrival = document.getElementById('f_tankerTime').value||''; });
+  on('f_tankerCount','input', ()=>{ supRecord.tankerCount = Number(document.getElementById('f_tankerCount').value)||0; });
+  on('f_tankerTimeReset','click', ()=>{ const el=document.getElementById('f_tankerTime'); if(el) el.value=''; supRecord.tankerArrival=''; });
   on('f_distStartReset','click', ()=>{ const el=document.getElementById('f_distStart'); if(el) el.value=''; supRecord.distributionStart=''; });
   on('f_distEndReset','click', ()=>{ const el=document.getElementById('f_distEnd'); if(el) el.value=''; supRecord.distributionEnd=''; });
   on('addWithdrawBtn','click', async ()=>{ supRecord.withdrawals.push({id:'w_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), note:'', qty:0, unit:'carton', rawQty:0, createdBy:state.currentUser.id, createdByName:state.currentUser.name, time:nowTime12()}); renderWithdrawList(); updateStats(); await persistSupWithdrawals(); });
