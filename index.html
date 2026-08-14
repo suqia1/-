@@ -1049,11 +1049,27 @@ async function loadShowDemoHint(){ const v = await storageGet('skq_showdemo'); i
 async function saveShowDemoHint(){ return await storageSet('skq_showdemo', state.showDemoHint ? '1':'0'); }
 async function loadDemoHintText(){ const v = await storageGet('skq_demohint_text'); if(v!=null) state.demoHintText = v; }
 async function saveDemoHintText(){ return await storageSet('skq_demohint_text', state.demoHintText); }
+async function storageGetPrefix(prefix){
+  if(!supabaseClient) return null; // no batch capability without Supabase — caller falls back to per-key storageGet
+  try{
+    const { data, error } = await supabaseClient.from('kv_store').select('key,value').like('key', prefix+'%');
+    if(error || !data) return null;
+    const result = {};
+    data.forEach(row=>{
+      result[row.key] = row.value;
+      try{ localStorage.setItem('saqya::'+row.key, row.value); }catch(e){}
+    });
+    return result;
+  }catch(e){ return null; }
+}
+function defaultRecordShape(){
+  return {openingStock:0,newCartons:0,withdrawals:[],notes:'',receipt:null,entryPhoto:null,exitPhoto:null,fridgePhoto:null,attendance:{},workHours:null,tankerArrival:'',tankerCount:0,qtyReceived:0,qtyDistributed:0,distributionStart:'',distributionEnd:'',waterColdness:'',savedAt:null,supplierArrivalTime:'',supplierOrderReceived:false,supplierOrderReceivedTime:'',supplierDeliveredQty:0,supplierReceiptPhoto:null,supplierOrderConfirmed:false,supplierExecutedTime:'',supplierManualAdd:0,supplierShortfallCounted:false,orderClaimedQty:0,orderRequestedQty:0,orderClaimedDays:[],orderCancelled:false,pendingManualQty:0,orderPendingGsApproval:false,orderRequestedTime:'',orderApprovedTime:'',supplierRecordSaved:false,supplierRecordSavedAt:'',gsApproved:false,gsApprovedAt:'',gsApprovedBy:''};
+}
 async function loadRecord(mosqueId,date){
   const raw = await storageGet(recKey(mosqueId,date));
   const rec = safeParse(raw, null);
   if(rec) return rec;
-  return {openingStock:0,newCartons:0,withdrawals:[],notes:'',receipt:null,entryPhoto:null,exitPhoto:null,fridgePhoto:null,attendance:{},workHours:null,tankerArrival:'',tankerCount:0,qtyReceived:0,qtyDistributed:0,distributionStart:'',distributionEnd:'',waterColdness:'',savedAt:null,supplierArrivalTime:'',supplierOrderReceived:false,supplierOrderReceivedTime:'',supplierDeliveredQty:0,supplierReceiptPhoto:null,supplierOrderConfirmed:false,supplierExecutedTime:'',supplierManualAdd:0,supplierShortfallCounted:false,orderClaimedQty:0,orderRequestedQty:0,orderClaimedDays:[],orderCancelled:false,pendingManualQty:0,orderPendingGsApproval:false,orderRequestedTime:'',orderApprovedTime:'',supplierRecordSaved:false,supplierRecordSavedAt:'',gsApproved:false,gsApprovedAt:'',gsApprovedBy:''};
+  return defaultRecordShape();
 }
 async function loadWarehouseRecord(date){
   const raw = await storageGet(warehouseKey(date));
@@ -6466,8 +6482,15 @@ async function computeLiveSupplierQty(mosqueId, uptoDate){
   const days = [];
   let sum = 0;
   let guard = 0;
+  const batch = await storageGetPrefix(recKey(mosqueId, '')); // one network round-trip instead of up to 367
   while(cursor <= uptoDate && guard < 367){
-    const rec = await loadRecord(mosqueId, cursor);
+    let rec;
+    if(batch){
+      const raw = batch[recKey(mosqueId, cursor)];
+      rec = raw ? (safeParse(raw, null) || defaultRecordShape()) : defaultRecordShape();
+    } else {
+      rec = await loadRecord(mosqueId, cursor);
+    }
     const dayWithdrawn = (rec.withdrawals||[]).reduce((s,w)=>s+(Number(w.qty)||0),0);
     const claimed = rec.orderClaimedQty || 0;
     const unclaimed = Math.max(0, dayWithdrawn - claimed);
