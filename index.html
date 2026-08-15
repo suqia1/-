@@ -473,7 +473,7 @@ let state = {
   demoHintText: 'حسابات تجريبية:\nالإدارة: admin / admin123\nمشرف قباء: quba_sup / 1234 · مشرف الميقات: miqat_sup / 1234 · مشرف القبلتين: qiblatain_sup / 1234',
   adminTab: 'users',
   attendLogMonth: null,
-  sidebarLabels: {users:'المستخدمون والمشرفون', collabs:'المتعاونون', reports:'المتابعة والتقارير', livereports:'التقارير مباشر', attendlog:'جدول الحضور والغياب', online:'المتصلون الآن', supplier:'المورد', supplierorder:'طلب عبوات للثلاجة', monthly:'الكراتين الموزعة', indicator:'المؤشر', private:'معلومات خاصة', approvereports:'اعتماد التقارير اليومية', supplierlog:'سجل المورد', warehouseadmin:'المستودع', driveradmin:'سائق ناقلات الماء'},
+  sidebarLabels: {users:'المستخدمون والمشرفون', collabs:'المتعاونون', reports:'المتابعة والتقارير', livereports:'التقارير مباشر', attendlog:'جدول الحضور والغياب', online:'المتصلون الآن', supplier:'المورد', supplierorder:'طلب عبوات للثلاجة', monthly:'الكراتين الموزعة', indicator:'مؤشر الثلاجة', private:'معلومات خاصة', approvereports:'اعتماد التقارير اليومية', supplierlog:'سجل المورد', warehouseadmin:'المستودع', driveradmin:'سائق ناقلات الماء'},
   sidebarOrder: ['users','collabs','reports','livereports','attendlog','online','supplier','supplierlog','warehouseadmin','driveradmin','monthly','indicator','private'],
   presenceHidden: {},
   notifCounters: {},
@@ -3009,14 +3009,18 @@ async function loadMonthData(yyyymm){
   const total = daysInMonth(yyyymm);
   const data = {};
   for(const m of MOSQUES){ data[m.id] = {}; }
-  const jobs = [];
-  for(let d=1; d<=total; d++){
-    const dateStr = monthDateStr(yyyymm, d);
-    for(const m of MOSQUES){
-      jobs.push(loadRecord(m.id, dateStr).then(rec=>{ data[m.id][dateStr] = rec; }));
+  for(const m of MOSQUES){
+    const batch = await storageGetPrefix(recKey(m.id, ''));
+    for(let d=1; d<=total; d++){
+      const dateStr = monthDateStr(yyyymm, d);
+      if(batch){
+        const raw = batch[recKey(m.id, dateStr)];
+        data[m.id][dateStr] = raw ? (safeParse(raw, null) || defaultRecordShape()) : defaultRecordShape();
+      } else {
+        data[m.id][dateStr] = await loadRecord(m.id, dateStr);
+      }
     }
   }
-  await Promise.all(jobs);
   return data;
 }
 function renderAdminMonthly(main){
@@ -3949,11 +3953,18 @@ async function loadAndRenderIndicator(mosqueId){
 }
 async function avgCollaboratorsForMosque(mosqueId, months){
   let daySum = 0, dayCount = 0;
+  const batch = await storageGetPrefix(recKey(mosqueId, ''));
   for(const yyyymm of months){
     const total = daysInMonth(yyyymm);
     for(let d=1; d<=total; d++){
       const dateStr = monthDateStr(yyyymm, d);
-      const rec = await loadRecord(mosqueId, dateStr);
+      let rec;
+      if(batch){
+        const raw = batch[recKey(mosqueId, dateStr)];
+        rec = raw ? safeParse(raw, null) : null;
+      } else {
+        rec = await loadRecord(mosqueId, dateStr);
+      }
       if(!rec || !rec.savedAt) continue;
       const present = Object.values(rec.attendance||{}).filter(v=>v==='present').length;
       daySum += present;
@@ -5587,7 +5598,7 @@ function renderColorsConfigPage(main){
     <button class="btn btn-ghost btn-sm" id="clBackBtn" style="margin-bottom:14px">→ رجوع لمعلومات خاصة</button>
     <h2>ألوان المواقع</h2>
     <div class="card" style="max-width:480px">
-      <p class="muted small">حدد لون كل موقع، وسيتغير فورًا في صفحة "المؤشر" وفي كل مكان يظهر فيه لون الموقع.</p>
+      <p class="muted small">حدد لون كل موقع، وسيتغير فورًا في صفحة "${state.sidebarLabels.indicator}" وفي كل مكان يظهر فيه لون الموقع.</p>
       <div id="indicatorColorsList" class="col gap-sm"></div>
     </div>
   `;
@@ -7698,7 +7709,7 @@ async function renderRecorderMain(){
       if(!latest.tankerWithdrawals) latest.tankerWithdrawals = [];
       latest[key].push(entry);
       const ok = await storageSet(recKey(mosqueId, state.today), JSON.stringify(latest));
-      if(ok){ toast('تمت إضافة السحبة'); await bumpNotifSite(['livereports','indicator'], mosqueId); } else toast('تعذر الحفظ، حاول مرة أخرى','err');
+      if(ok){ toast('تمت إضافة السحبة'); await bumpNotifSite(key==='tankerWithdrawals' ? ['livereports'] : ['livereports','indicator'], mosqueId); } else toast('تعذر الحفظ، حاول مرة أخرى','err');
       recorderRecord = latest;
       renderRecorderLimitTarget(cfg, recorderRecord);
       renderRecorderLists(recorderRecord);
@@ -8258,16 +8269,25 @@ async function renderSupervisorMain(){
   if(jumpBtn) jumpBtn.addEventListener('click', ()=>{ state.supDate = state.today; renderSupervisorMain(); });
 
   const on = (id, ev, fn)=>{ const el = document.getElementById(id); if(el) el.addEventListener(ev, fn); };
+  async function pushLiveNow(alsoIndicator){
+    await storageSet(`skq_live__${mosqueId}__${state.supDate}`, JSON.stringify(supRecord));
+    await bumpNotifSite(alsoIndicator ? ['livereports','indicator'] : ['livereports'], mosqueId);
+  }
   on('f_opening','input', ()=>{ supRecord.openingStock = Number(document.getElementById('f_opening').value)||0; updateStats(); });
+  on('f_opening','change', ()=>pushLiveNow(true));
   on('f_new','input', ()=>{ supRecord.newCartons = Number(document.getElementById('f_new').value)||0; updateStats(); });
+  on('f_new','change', ()=>pushLiveNow(true));
   on('f_qtyReceived','input', ()=>{ supRecord.qtyReceived = Number(document.getElementById('f_qtyReceived').value)||0; updateStats(); });
+  on('f_qtyReceived','change', ()=>pushLiveNow(false));
   on('f_tankerTime','input', ()=>{ supRecord.tankerArrival = document.getElementById('f_tankerTime').value||''; });
+  on('f_tankerTime','change', ()=>pushLiveNow(false));
   on('f_tankerCount','input', ()=>{ supRecord.tankerCount = Number(document.getElementById('f_tankerCount').value)||0; });
-  on('f_tankerTimeReset','click', ()=>{ const el=document.getElementById('f_tankerTime'); if(el) el.value=''; supRecord.tankerArrival=''; });
+  on('f_tankerCount','change', ()=>pushLiveNow(false));
+  on('f_tankerTimeReset','click', ()=>{ const el=document.getElementById('f_tankerTime'); if(el) el.value=''; supRecord.tankerArrival=''; pushLiveNow(false); });
   on('f_distStartReset','click', ()=>{ const el=document.getElementById('f_distStart'); if(el) el.value=''; supRecord.distributionStart=''; });
   on('f_distEndReset','click', ()=>{ const el=document.getElementById('f_distEnd'); if(el) el.value=''; supRecord.distributionEnd=''; });
   on('addWithdrawBtn','click', async ()=>{ supRecord.withdrawals.push({id:'w_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), note:'', qty:0, unit:'carton', rawQty:0, createdBy:state.currentUser.id, createdByName:state.currentUser.name, time:nowTime12()}); renderWithdrawList(); updateStats(); await persistSupWithdrawals(); });
-  on('addTankerWithdrawBtn','click', async ()=>{ if(!supRecord.tankerWithdrawals) supRecord.tankerWithdrawals=[]; supRecord.tankerWithdrawals.push({id:'w_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), note:'', qty:0, unit:'carton', rawQty:0, createdBy:state.currentUser.id, createdByName:state.currentUser.name, time:nowTime12()}); renderTankerWithdrawList(); updateStats(); await persistSupWithdrawals(); });
+  on('addTankerWithdrawBtn','click', async ()=>{ if(!supRecord.tankerWithdrawals) supRecord.tankerWithdrawals=[]; supRecord.tankerWithdrawals.push({id:'w_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), note:'', qty:0, unit:'carton', rawQty:0, createdBy:state.currentUser.id, createdByName:state.currentUser.name, time:nowTime12()}); renderTankerWithdrawList(); updateStats(); await persistSupWithdrawals(true); });
 
   renderWithdrawList();
   renderTankerWithdrawList();
@@ -8423,7 +8443,7 @@ function renderTankerWithdrawList(){
     supRecord.tankerWithdrawals[+el.dataset.twNote].note = e.target.value;
     renderTankerStatementTable();
   }));
-  Array.from(wrap.querySelectorAll('[data-tw-note]')).forEach(el=>el.addEventListener('change', ()=>{ persistSupWithdrawals(); }));
+  Array.from(wrap.querySelectorAll('[data-tw-note]')).forEach(el=>el.addEventListener('change', ()=>{ persistSupWithdrawals(true); }));
   Array.from(wrap.querySelectorAll('[data-tw-qty]')).forEach(el=>el.addEventListener('input', e=>{
     const i = +el.dataset.twQty;
     supRecord.tankerWithdrawals[i].rawQty = Number(e.target.value)||0;
@@ -8431,7 +8451,7 @@ function renderTankerWithdrawList(){
     updateStats();
     renderTankerStatementTable();
   }));
-  Array.from(wrap.querySelectorAll('[data-tw-qty]')).forEach(el=>el.addEventListener('change', ()=>{ persistSupWithdrawals(); }));
+  Array.from(wrap.querySelectorAll('[data-tw-qty]')).forEach(el=>el.addEventListener('change', ()=>{ persistSupWithdrawals(true); }));
   Array.from(wrap.querySelectorAll('[data-tw-unit]')).forEach(el=>el.addEventListener('change', async e=>{
     const i = +el.dataset.twUnit;
     supRecord.tankerWithdrawals[i].unit = e.target.value;
@@ -8440,7 +8460,7 @@ function renderTankerWithdrawList(){
     updateStats();
     renderTankerWithdrawList();
     renderTankerStatementTable();
-    await persistSupWithdrawals();
+    await persistSupWithdrawals(true);
   }));
   Array.from(wrap.querySelectorAll('[data-tw-photo]')).forEach(el=>el.addEventListener('change', async e=>{
     const file = e.target.files[0]; if(!file) return;
@@ -8449,13 +8469,13 @@ function renderTankerWithdrawList(){
       const stamped = await burnTimestampOnImage(compact);
       supRecord.tankerWithdrawals[+el.dataset.twPhoto].photo = stamped;
       renderTankerWithdrawList();
-      await persistSupWithdrawals();
+      await persistSupWithdrawals(true);
     }catch(err){ toast('تعذر رفع الصورة','err'); }
   }));
   Array.from(wrap.querySelectorAll('[data-tw-del]')).forEach(el=>el.addEventListener('click', async ()=>{
     supRecord.tankerWithdrawals.splice(+el.dataset.twDel,1);
     renderTankerWithdrawList(); updateStats(); renderTankerStatementTable();
-    await persistSupWithdrawals();
+    await persistSupWithdrawals(true);
   }));
   renderTankerStatementTable();
 }
@@ -8680,13 +8700,13 @@ function nowTime12(){
 function nowDateTime12(){
   return humanDateNoDay(state.today) + '، ' + nowTime12();
 }
-async function persistSupWithdrawals(){
+async function persistSupWithdrawals(skipIndicator){
   const mosqueId = state.currentUser.mosqueId;
   const latest = await loadRecord(mosqueId, state.supDate);
   latest.withdrawals = supRecord.withdrawals;
   latest.tankerWithdrawals = supRecord.tankerWithdrawals;
   await storageSet(recKey(mosqueId, state.supDate), JSON.stringify(latest));
-  await bumpNotifSite(['livereports','indicator'], mosqueId); // these two notify immediately on any addition, unlike المتابعة والتقارير which only notifies after the final daily save
+  await bumpNotifSite(skipIndicator ? ['livereports'] : ['livereports','indicator'], mosqueId); // notifies immediately on any addition, unlike المتابعة والتقارير which only notifies after the final daily save — tanker-table changes deliberately skip المؤشر per request
 }
 async function persistSupActionPoints(){
   const mosqueId = state.currentUser.mosqueId;
