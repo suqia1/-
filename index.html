@@ -473,12 +473,12 @@ let state = {
   demoHintText: 'حسابات تجريبية:\nالإدارة: admin / admin123\nمشرف قباء: quba_sup / 1234 · مشرف الميقات: miqat_sup / 1234 · مشرف القبلتين: qiblatain_sup / 1234',
   adminTab: 'users',
   attendLogMonth: null,
-  sidebarLabels: {users:'المستخدمون والمشرفون', collabs:'المتعاونون', reports:'المتابعة والتقارير', livereports:'التقارير مباشر', attendlog:'جدول الحضور والغياب', online:'المتصلون الآن', supplier:'المورد', supplierorder:'طلب عبوات للثلاجة', monthly:'الكراتين الموزعة', indicator:'مؤشر الثلاجة', private:'معلومات خاصة', approvereports:'اعتماد التقارير اليومية', supplierlog:'سجل المورد', warehouseadmin:'المستودع', driveradmin:'سائق ناقلات الماء'},
-  sidebarOrder: ['users','collabs','reports','livereports','attendlog','online','supplier','supplierlog','warehouseadmin','driveradmin','monthly','indicator','private'],
+  sidebarLabels: {users:'المستخدمون والمشرفون', collabs:'المتعاونون', reports:'المتابعة والتقارير', livereports:'التقارير مباشر', attendlog:'جدول الحضور والغياب', online:'المتصلون الآن', supplier:'المورد', supplierorder:'طلب عبوات للثلاجة', monthly:'الكراتين الموزعة', cartons330:'الكراتين الموزعة لعبوات 330مل', cartons200:'الكراتين الموزعة لعبوات 200مل', indicator:'مؤشر الثلاجة', private:'معلومات خاصة', approvereports:'اعتماد التقارير اليومية', supplierlog:'سجل المورد', warehouseadmin:'المستودع', driveradmin:'سائق ناقلات الماء'},
+  sidebarOrder: ['users','collabs','reports','livereports','attendlog','online','supplier','supplierlog','warehouseadmin','driveradmin','monthly','cartons330','cartons200','indicator','private'],
   presenceHidden: {},
   notifCounters: {},
   notifSeenCounters: {},
-  gsSidebarOrder: ['collabs','approvereports','reports','livereports','monthly','attendlog','online','supplierorder','driveradmin','recorderusers','private'],
+  gsSidebarOrder: ['collabs','approvereports','reports','livereports','monthly','cartons330','cartons200','attendlog','online','supplierorder','driveradmin','recorderusers','private'],
   presenceSiteToggle: {},
   attendLogRoster: {},
   attendLogData: {},
@@ -1063,7 +1063,14 @@ async function storageGetPrefix(prefix){
   }catch(e){ return null; }
 }
 function defaultRecordShape(){
-  return {openingStock:0,newCartons:0,withdrawals:[],notes:'',receipt:null,entryPhoto:null,exitPhoto:null,fridgePhoto:null,attendance:{},workHours:null,tankerArrival:'',tankerCount:0,qtyReceived:0,qtyDistributed:0,distributionStart:'',distributionEnd:'',waterColdness:'',savedAt:null,supplierArrivalTime:'',supplierOrderReceived:false,supplierOrderReceivedTime:'',supplierDeliveredQty:0,supplierReceiptPhoto:null,supplierOrderConfirmed:false,supplierExecutedTime:'',supplierManualAdd:0,supplierShortfallCounted:false,orderClaimedQty:0,orderRequestedQty:0,orderClaimedDays:[],orderCancelled:false,pendingManualQty:0,orderPendingGsApproval:false,orderRequestedTime:'',orderApprovedTime:'',supplierRecordSaved:false,supplierRecordSavedAt:'',gsApproved:false,gsApprovedAt:'',gsApprovedBy:''};
+  return {openingStock:0,newCartons:0,openingStock200:0,openingStock330:0,newCartons200:0,newCartons330:0,withdrawals:[],notes:'',receipt:null,entryPhoto:null,exitPhoto:null,fridgePhoto:null,attendance:{},workHours:null,tankerArrival:'',tankerCount:0,qtyReceived:0,qtyDistributed:0,qtyReceived200:0,qtyReceived330:0,qtyDistributed200:0,qtyDistributed330:0,distributionStart:'',distributionEnd:'',waterColdness:'',savedAt:null,supplierArrivalTime:'',supplierOrderReceived:false,supplierOrderReceivedTime:'',supplierDeliveredQty:0,supplierDeliveredQty330:0,supplierDeliveredQty200:0,supplierReceiptPhoto:null,supplierOrderConfirmed:false,supplierExecutedTime:'',supplierManualAdd:0,supplierShortfallCounted:false,orderClaimedQty:0,orderRequestedQty:0,orderRequestedQty200:0,orderRequestedQty330:0,orderClaimedDays:[],orderCancelled:false,pendingManualQty:0,pendingManualQty200:0,pendingManualQty330:0,orderPendingGsApproval:false,orderRequestedTime:'',orderApprovedTime:'',supplierRecordSaved:false,supplierRecordSavedAt:'',gsApproved:false,gsApprovedAt:'',gsApprovedBy:''};
+}
+function withdrawnBySize(rec, size){ return (rec.withdrawals||[]).filter(w=>(w.bottleSize||'330')===size).reduce((s,w)=>s+(Number(w.qty)||0),0); }
+function tankerWithdrawnBySize(rec, size){ return (rec.tankerWithdrawals||[]).filter(w=>(w.bottleSize||'330')===size).reduce((s,w)=>s+(Number(w.qty)||0),0); }
+function remainingBySize(rec, size){
+  const opening = size==='200' ? (Number(rec.openingStock200)||0) : (Number(rec.openingStock330)||0);
+  const news = size==='200' ? (Number(rec.newCartons200)||0) : (Number(rec.newCartons330)||0);
+  return opening + news - withdrawnBySize(rec, size);
 }
 async function loadRecord(mosqueId,date){
   const raw = await storageGet(recKey(mosqueId,date));
@@ -1096,36 +1103,40 @@ async function computeDriverDayTotals(driverId, date){
   const whRec = await loadWarehouseRecord(date);
   const supplyEntries = whRec.supplyEntries.filter(en=>en.driverId===driverId);
   const supplied = supplyEntries.reduce((s,en)=>s+(Number(en.qty)||0),0);
+  const supplied330 = supplyEntries.filter(en=>(en.bottleSize||'330')==='330').reduce((s,en)=>s+(Number(en.qty)||0),0);
+  const supplied200 = supplyEntries.filter(en=>(en.bottleSize||'330')==='200').reduce((s,en)=>s+(Number(en.qty)||0),0);
   const sites = activeMosques();
-  let returned = 0, delivered = 0;
+  let returned = 0, delivered = 0, returned330 = 0, returned200 = 0, delivered330 = 0, delivered200 = 0;
   const returnEntries = [];
   for(const m of sites){
     const r = await loadDriverRecord(driverId, m.id, date);
     const q = Number(r.returnQty)||0;
+    const q330 = Number(r.returnQty330)||0, q200 = Number(r.returnQty200)||0;
     const dq = Number(r.deliveredQty)||0;
-    returned += q;
-    delivered += dq;
-    if(q>0) returnEntries.push({siteName:m.name, qty:q, time:r.returnTime||''});
+    returned += q; returned330 += q330; returned200 += q200;
+    delivered += dq; delivered330 += Number(r.deliveredQty330)||0; delivered200 += Number(r.deliveredQty200)||0;
+    if(q330>0) returnEntries.push({siteName:m.name, qty:q330, bottleSize:'330', time:r.returnTime||''});
+    if(q200>0) returnEntries.push({siteName:m.name, qty:q200, bottleSize:'200', time:r.returnTime||''});
   }
-  return {supplied, returned, delivered, net: delivered-returned, supplyEntries, returnEntries};
+  return {supplied, supplied330, supplied200, returned, returned330, returned200, delivered, delivered330, delivered200, net: delivered-returned, net330: delivered330-returned330, net200: delivered200-returned200, supplyEntries, returnEntries};
 }
 function driverTotalsCardHTML(t){
   return `
     <div class="card" style="margin-top:16px">
       <table class="kv-table">
-        <tr><td>الكمية الموردة (من المستودع)</td><td><span class="kv-readonly" style="color:var(--green);font-weight:700">${t.supplied}+</span></td></tr>
-        <tr><td>الرجيع</td><td><span class="kv-readonly" style="color:var(--red);font-weight:700">${t.returned}-</span></td></tr>
-        <tr><td>إجمالي الكراتين الموزعة</td><td><span class="kv-readonly" style="font-weight:800">${t.net}</span></td></tr>
+        <tr><td>الكمية الموردة (من المستودع)</td><td>${qtyBreakdownHTML(t.supplied, t.supplied330, t.supplied200)}</td></tr>
+        <tr><td>الرجيع</td><td>${qtyBreakdownHTML(t.returned, t.returned330, t.returned200)}</td></tr>
+        <tr><td>إجمالي الكراتين الموزعة</td><td>${qtyBreakdownHTML(t.net, t.net330, t.net200)}</td></tr>
       </table>
       ${t.supplyEntries.length ? `
       <p class="small muted" style="margin:10px 0 4px">وقت التوريد</p>
       <div class="col gap-sm">
-        ${t.supplyEntries.map(en=>`<div class="row" style="justify-content:space-between"><span style="color:var(--green)">${en.qty}+</span><span class="muted small">${en.time?formatTime12(en.time):'—'}</span></div>`).join('')}
+        ${t.supplyEntries.map(en=>`<div class="row" style="justify-content:space-between"><span style="color:var(--green)">${en.qty}+ (${en.bottleSize||'330'} مل)</span><span class="muted small">${en.time?formatTime12(en.time):'—'}</span></div>`).join('')}
       </div>` : ''}
       ${t.returnEntries.length ? `
       <p class="small muted" style="margin:10px 0 4px">وقت الترجيع</p>
       <div class="col gap-sm">
-        ${t.returnEntries.map(en=>`<div class="row" style="justify-content:space-between"><span>${en.siteName}: <span style="color:var(--red)">${en.qty}-</span></span><span class="muted small">${en.time?formatTime12(en.time):'—'}</span></div>`).join('')}
+        ${t.returnEntries.map(en=>`<div class="row" style="justify-content:space-between"><span>${en.siteName}: <span style="color:var(--red)">${en.qty}-</span> (${en.bottleSize||'330'} مل)</span><span class="muted small">${en.time?formatTime12(en.time):'—'}</span></div>`).join('')}
       </div>` : ''}
     </div>`;
 }
@@ -1192,6 +1203,15 @@ document.addEventListener('DOMContentLoaded', ()=>{
   const overlay = document.getElementById('lightboxOverlay');
   if(overlay) overlay.addEventListener('click', ()=>{ overlay.style.display = 'none'; });
 });
+function numHTML(n){ return `<strong style="color:var(--deep);font-size:1.08em">${n||0}</strong>`; }
+function qtyBreakdownHTML(total, v330, v200){
+  return `<span style="white-space:nowrap">(الإجمالي:${numHTML(total)}) (كرتون عبوات 330مل :${numHTML(v330)}) (كرتون عبوات 200مل :${numHTML(v200)})</span>`;
+}
+function rerenderUnlessTyping(renderFn){
+  const active = document.activeElement;
+  const isTyping = active && (active.tagName==='INPUT' || active.tagName==='SELECT' || active.tagName==='TEXTAREA');
+  if(!isTyping) renderFn();
+}
 function toast(msg, type='ok'){
   const wrap = document.getElementById('toastWrap');
   const el = document.createElement('div');
@@ -1522,7 +1542,9 @@ function renderAdminMain(){
   if(state.adminTab==='supplierlog') return renderAdminSupplierLog(main);
   if(state.adminTab==='warehouseadmin') return renderWarehouseViewPage(main);
   if(state.adminTab==='driveradmin') return renderDriverViewPage(main);
-  if(state.adminTab==='monthly') return renderAdminMonthly(main);
+  if(state.adminTab==='monthly'){ state.monthlyBottleSizeFilter=null; state.monthlySizeTitle=null; return renderAdminMonthly(main); }
+  if(state.adminTab==='cartons330') return renderAdminMonthlyBySize(main, '330');
+  if(state.adminTab==='cartons200') return renderAdminMonthlyBySize(main, '200');
   if(state.adminTab==='indicator') return renderAdminIndicator(main);
   if(state.adminTab==='private') return renderAdminPrivateInfo(main);
 }
@@ -2146,8 +2168,8 @@ async function exportSupplierCardPDF(mosqueId){
       <div style="text-align:center;margin-bottom:8px">${receivedLine}</div>
       <table class="kv-table">
         ${rec.supplierRecordSaved ? `
-        <tr><td>الكمية المطلوبة (كرتون)</td><td><span class="kv-readonly">${qty}</span></td></tr>
-        <tr><td>الكمية التي نزلت (كرتون)</td><td><span class="kv-readonly">${rec.supplierDeliveredQty||0}</span></td></tr>
+        <tr><td>الكمية المطلوبة (كرتون)</td><td><span class="kv-readonly">${qtyBreakdownHTML(qty, rec.orderRequestedQty330, rec.orderRequestedQty200)}</span></td></tr>
+        <tr><td>الكمية التي نزلت (كرتون)</td><td><span class="kv-readonly">${qtyBreakdownHTML(rec.supplierDeliveredQty, rec.supplierDeliveredQty330, rec.supplierDeliveredQty200)}</span></td></tr>
         ` : `<tr><td colspan="2"><span class="muted small">لن تظهر الكمية إلا بعد حفظ الجدول من المورد.</span></td></tr>`}
         <tr><td>وقت الطلب</td><td><span class="kv-readonly">${rec.orderRequestedTime?formatTime12(rec.orderRequestedTime):'—'}</span></td></tr>
         <tr><td>وقت قبول الطلب</td><td><span class="kv-readonly">${rec.orderApprovedTime?formatTime12(rec.orderApprovedTime):'—'}</span></td></tr>
@@ -2262,8 +2284,8 @@ async function renderSupplierSiteDetail(main, mosqueId){
         </div>
         <table class="kv-table" style="margin-top:10px">
           ${saveReady ? `
-          <tr><td>الكمية المطلوبة (كرتون)</td><td><span class="kv-readonly">${qty}</span></td></tr>
-          <tr><td>الكمية التي نزلت (كرتون)</td><td><span class="kv-readonly">${rec.supplierDeliveredQty||0}</span></td></tr>
+          <tr><td>الكمية المطلوبة (كرتون)</td><td><span class="kv-readonly">${qtyBreakdownHTML(qty, rec.orderRequestedQty330, rec.orderRequestedQty200)}</span></td></tr>
+          <tr><td>الكمية التي نزلت (كرتون)</td><td><span class="kv-readonly">${qtyBreakdownHTML(rec.supplierDeliveredQty, rec.supplierDeliveredQty330, rec.supplierDeliveredQty200)}</span></td></tr>
           ` : `<tr><td colspan="2"><span class="muted small">لن تظهر الكمية إلا بعد حفظ الجدول من المورد.</span></td></tr>`}
           <tr><td>وقت الطلب</td><td><span class="kv-readonly">${rec.orderRequestedTime?formatTime12(rec.orderRequestedTime):'—'}</span></td></tr>
           <tr><td>وقت قبول الطلب</td><td><span class="kv-readonly">${rec.orderApprovedTime?formatTime12(rec.orderApprovedTime):'—'}</span></td></tr>
@@ -2285,15 +2307,17 @@ async function renderSupplierSiteDetail(main, mosqueId){
     if(!statsWrap) return;
     await loadMosques();
     const monthData = await loadMonthData(state.supplierViewMonth);
-    const totalRequested = await computeMonthlySupplierTotal(mosqueId, state.supplierViewMonth);
+    const requested = await computeMonthlySupplierTotal(mosqueId, state.supplierViewMonth);
     const days = Object.values(monthData[mosqueId]||{});
     const savedDays = days.filter(rec=>rec.supplierRecordSaved);
     const totalDelivered = savedDays.reduce((s,rec)=>s+(Number(rec.supplierDeliveredQty)||0),0);
+    const totalDelivered330 = savedDays.reduce((s,rec)=>s+(Number(rec.supplierDeliveredQty330)||0),0);
+    const totalDelivered200 = savedDays.reduce((s,rec)=>s+(Number(rec.supplierDeliveredQty200)||0),0);
     const receivedDays = days.filter(rec=>rec.supplierOrderReceived).length;
     statsWrap.innerHTML = `
       <table class="kv-table">
-        <tr><td>الكمية المطلوبة (حتى نهاية الشهر)</td><td><span class="kv-readonly">${totalRequested}</span></td></tr>
-        <tr><td>الكمية التي نزلت (إجمالي الشهر — الأيام المحفوظة فقط)</td><td><span class="kv-readonly">${totalDelivered}</span></td></tr>
+        <tr><td>الكمية المطلوبة (حتى نهاية الشهر)</td><td>${qtyBreakdownHTML(requested.total, requested.total330, requested.total200)}</td></tr>
+        <tr><td>الكمية التي نزلت (إجمالي الشهر — الأيام المحفوظة فقط)</td><td>${qtyBreakdownHTML(totalDelivered, totalDelivered330, totalDelivered200)}</td></tr>
         <tr><td>عدد أيام الاستلام</td><td><span class="kv-readonly">${receivedDays}</span></td></tr>
       </table>
     `;
@@ -2723,14 +2747,18 @@ async function loadAndRenderReport(approvalMode){
   const cfg = getFormConfig(state.reportMosque);
   const fr = cfg.fridge, tk = cfg.tankers;
   const totalWithdrawn = (rec.withdrawals||[]).reduce((s,w)=>s+(Number(w.qty)||0),0);
-  const remaining = (Number(rec.openingStock)||0) + (Number(rec.newCartons)||0) - totalWithdrawn;
+  const withdrawn330 = withdrawnBySize(rec, '330');
+  const withdrawn200 = withdrawnBySize(rec, '200');
+  const remaining330 = remainingBySize(rec, '330');
+  const remaining200 = remainingBySize(rec, '200');
+  const remaining = remaining330 + remaining200;
   const surplus = (Number(rec.qtyReceived)||0) - (Number(rec.qtyDistributed)||0);
   const capacityPctText = (fr.showCapacityPercent!==false && fr.capacityValue>0) ? ` <span class="muted small">(${Math.round((remaining/fr.capacityValue)*100)}% / ${(remaining-fr.capacityValue)>0?'+':''}${remaining-fr.capacityValue})</span>` : '';
   const fridgeReadRowsMap = {
-    opening: `<tr><td>${fr.fields.opening.label}</td><td><span class="kv-readonly">${rec.openingStock||0}</span></td></tr>`,
-    newCartons: `<tr><td>${fr.fields.newCartons.label}</td><td><span class="kv-readonly">${rec.newCartons||0}</span></td></tr>`,
-    totalWithdrawn: `<tr><td>${fr.fields.totalWithdrawn.label}</td><td><span class="kv-readonly">${totalWithdrawn}</span></td></tr>`,
-    remaining: `<tr><td>${fr.fields.remaining.label}</td><td><span class="kv-readonly" style="color:${remaining<0?'var(--red)':'var(--deep)'}">${remaining}</span>${capacityPctText}</td></tr>`,
+    opening: `<tr><td>${fr.fields.opening.label}</td><td><span class="muted small">330 مل: <strong>${rec.openingStock330||0}</strong> — 200 مل: <strong>${rec.openingStock200||0}</strong></span></td></tr>`,
+    newCartons: `<tr><td>${fr.fields.newCartons.label}</td><td><span class="muted small">330 مل: <strong>${rec.newCartons330||0}</strong> — 200 مل: <strong>${rec.newCartons200||0}</strong></span></td></tr>`,
+    totalWithdrawn: `<tr><td>${fr.fields.totalWithdrawn.label}</td><td>الإجمالي: ${numHTML(totalWithdrawn)}<br>عبوات 330مل: ${numHTML(withdrawn330)}<br>عبوات 200مل: ${numHTML(withdrawn200)}</td></tr>`,
+    remaining: `<tr><td>${fr.fields.remaining.label}</td><td><span class="muted small">330 مل: <strong style="color:${remaining330<0?'var(--red)':'var(--deep)'}">${remaining330}</strong> — 200 مل: <strong style="color:${remaining200<0?'var(--red)':'var(--deep)'}">${remaining200}</strong></span>${capacityPctText}</td></tr>`,
     capacity: fr.capacityLabel.visible!==false ? `<tr><td>${fr.capacityLabel.label}</td><td><span class="kv-readonly">${fr.capacityValue||0}</span></td></tr>` : '',
     limit: fr.limitLabel.visible!==false ? (()=>{
       const limit = fr.limitValue||0;
@@ -2755,7 +2783,7 @@ async function loadAndRenderReport(approvalMode){
   const tankerReadRowsMap = {
     arrival: `<tr><td>${tk.fields.arrival.label}</td><td><span class="kv-readonly">${rec.tankerArrival ? formatTime12(rec.tankerArrival) : '—'}</span></td></tr>`,
     count: `<tr><td>${tk.fields.count.label}</td><td><span class="kv-readonly">${rec.tankerCount||0}</span></td></tr>`,
-    received: `<tr><td>${tk.fields.received.label}</td><td><span class="kv-readonly">${rec.qtyReceived||0}</span></td></tr>`,
+    received: `<tr><td>${tk.fields.received.label}</td><td><span class="muted small">330 مل: <strong>${rec.qtyReceived330||0}</strong> — 200 مل: <strong>${rec.qtyReceived200||0}</strong></span></td></tr>`,
     distributed: `<tr><td>${tk.fields.distributed.label}</td><td><span class="kv-readonly">${rec.qtyDistributed||0}</span></td></tr>`,
     surplus: `<tr><td>${tk.fields.surplus.label}</td><td><span class="kv-readonly" style="color:${surplus<0?'var(--red)':'var(--deep)'}">${surplus}</span></td></tr>`,
   };
@@ -2972,11 +3000,24 @@ function renderAttendanceReadonly(mosqueId, attendance, customStatValues, attend
 }
 
 /* ---- monthly tab ---- */
+function bottlesPerCartonForSize(size){ return size==='200' ? 48 : 40; }
+function bottlesForEntry(w){ return (Number(w.qty)||0) * bottlesPerCartonForSize(w.bottleSize||'330'); }
+function bottlesForRecordBySize(rec, size){
+  if(!rec) return 0;
+  const fridge = (rec.withdrawals||[]).filter(w=>(w.bottleSize||'330')===size).reduce((s,w)=>s+bottlesForEntry(w),0);
+  const tanker = (rec.tankerWithdrawals||[]).filter(w=>(w.bottleSize||'330')===size).reduce((s,w)=>s+bottlesForEntry(w),0);
+  return fridge + tanker;
+}
 function totalDistributedFromRecord(rec){
   if(!rec) return 0;
   const tanker = Number(rec.qtyDistributed)||0;
   const fridge = (rec.withdrawals||[]).reduce((s,w)=>s+(Number(w.qty)||0),0);
   return tanker + fridge;
+}
+function monthlyDistributedFromRecord(rec){
+  if(!rec) return 0;
+  if(state.monthlyBottleSizeFilter) return cartonsForRecordBySize(rec, state.monthlyBottleSizeFilter);
+  return cartonsForRecordBySize(rec, '330') + cartonsForRecordBySize(rec, '200');
 }
 function daysInMonth(yyyymm){
   const [y,m] = yyyymm.split('-').map(Number);
@@ -3023,11 +3064,23 @@ async function loadMonthData(yyyymm){
   }
   return data;
 }
+function cartonsForRecordBySize(rec, size){
+  if(!rec) return 0;
+  const fridge = (rec.withdrawals||[]).filter(w=>(w.bottleSize||'330')===size).reduce((s,w)=>s+(Number(w.qty)||0),0);
+  const tanker = (rec.tankerWithdrawals||[]).filter(w=>(w.bottleSize||'330')===size).reduce((s,w)=>s+(Number(w.qty)||0),0);
+  return fridge + tanker;
+}
+function renderAdminMonthlyBySize(main, size){
+  state.monthlyBottleSizeFilter = size;
+  state.monthlySizeTitle = `${state.sidebarLabels.monthly} لعبوات ${size} مل`;
+  renderAdminMonthly(main);
+}
 function renderAdminMonthly(main){
   const canExport = state.currentUser.role !== 'general_supervisor';
+  const title = state.monthlySizeTitle || state.sidebarLabels.monthly;
   main.innerHTML = `
-    <h2>${state.sidebarLabels.monthly}</h2>
-    <p class="muted small">جدول تلقائي يجمع الكمية الموزعة من تقارير المشرفين اليومية لكل موقع.</p>
+    <h2>${title}</h2>
+    <p class="muted small">جدول تلقائي يجمع الكمية الموزعة من تقارير المشرفين اليومية لكل موقع${state.monthlyBottleSizeFilter ? ` — عبوات ${state.monthlyBottleSizeFilter} مل فقط` : ''}.</p>
     <div class="row gap-md" style="margin-bottom:14px;align-items:flex-end;flex-wrap:wrap">
       <div>
         <label class="label">الشهر</label>
@@ -3050,7 +3103,7 @@ function renderAdminMonthly(main){
       const d = state.lastMonthlyExportData;
       if(!d){ toast('لا توجد بيانات للتصدير بعد','err'); return; }
       if(d.type==='current') exportMonthlyExcel(d);
-      else exportRangeExcel(d.mode, d.rangeLabel, d.rangeMosques, d.totals, d.fridgeTotals, d.tankerTotals);
+      else exportRangeExcel(d.mode, d.rangeLabel, d.rangeMosques, d.totals, d.fridgeTotals, d.tankerTotals, d.packets, d.fridgePackets);
     });
   }
   renderRangePills();
@@ -3217,6 +3270,7 @@ function renderRangeSlots(){
     });
   }
 }
+function currentPacketMult(){ return state.monthlyBottleSizeFilter ? bottlesPerCartonForSize(state.monthlyBottleSizeFilter) : 40; }
 async function loadAndRenderMonthly(){
   const content = document.getElementById('monthlyContent');
   content.innerHTML = `<div class="empty-state">جارٍ التحميل…</div>`;
@@ -3224,6 +3278,7 @@ async function loadAndRenderMonthly(){
   const total = daysInMonth(yyyymm);
   const data = await loadMonthData(yyyymm);
   const monthMosques = sortMosquesByOrder(mosquesForMonth(yyyymm), state.monthlyMosqueOrder);
+  const packetMult = state.monthlyBottleSizeFilter ? bottlesPerCartonForSize(state.monthlyBottleSizeFilter) : 40;
 
   // build 5 week-chunks of 7 days starting at day 1
   const weeks = [];
@@ -3245,7 +3300,14 @@ async function loadAndRenderMonthly(){
     if(!dateStr) return 0;
     const rec = data[mosqueId][dateStr];
     if(!rec || !rec.gsApproved) return 0;
-    return totalDistributedFromRecord(rec);
+    return monthlyDistributedFromRecord(rec);
+  }
+  function packetsFor(mosqueId, dateStr){
+    if(!dateStr) return 0;
+    const rec = data[mosqueId][dateStr];
+    if(!rec || !rec.gsApproved) return 0;
+    if(state.monthlyBottleSizeFilter) return bottlesForRecordBySize(rec, state.monthlyBottleSizeFilter);
+    return bottlesForRecordBySize(rec, '330') + bottlesForRecordBySize(rec, '200'); // مجموع دقيق لكل حجم على حدة، وليس تقدير بمعامل واحد قد يخلط بين الحجمين
   }
   function withdrawnFor(mosqueId, dateStr){
     if(!dateStr) return 0;
@@ -3257,6 +3319,13 @@ async function loadAndRenderMonthly(){
     if(!dateStr) return 0;
     const rec = data[mosqueId][dateStr];
     return (rec && rec.gsApproved) ? (Number(rec.qtyDistributed)||0) : 0;
+  }
+  function fridgeBottlesFor(mosqueId, dateStr){
+    if(!dateStr) return 0;
+    const rec = data[mosqueId][dateStr];
+    if(!rec || !rec.withdrawals || !rec.gsApproved) return 0;
+    if(state.monthlyBottleSizeFilter) return rec.withdrawals.filter(w=>(w.bottleSize||'330')===state.monthlyBottleSizeFilter).reduce((s,w)=>s+bottlesForEntry(w),0);
+    return rec.withdrawals.reduce((s,w)=>s+bottlesForEntry(w),0);
   }
   function sourceLabel(dateStr){
     if(!dateStr) return '';
@@ -3285,31 +3354,37 @@ async function loadAndRenderMonthly(){
   // weekly + monthly totals per mosque (cartons)
   const weeklyTotals = {}; // [mosqueId][weekIdx] = cartons
   const monthlyTotals = {}; // [mosqueId] = cartons
-  monthMosques.forEach(m=>{ weeklyTotals[m.id]=[0,0,0,0,0]; monthlyTotals[m.id]=0; });
+  const weeklyPackets = {}; // [mosqueId][weekIdx] = عدد عبوات دقيق
+  const monthlyPackets = {}; // [mosqueId] = عدد عبوات دقيق
+  monthMosques.forEach(m=>{ weeklyTotals[m.id]=[0,0,0,0,0]; monthlyTotals[m.id]=0; weeklyPackets[m.id]=[0,0,0,0,0]; monthlyPackets[m.id]=0; });
 
   const weekBlocksHTML = weeks.map((days, wIdx)=>{
     const dateStrs = days.map(dayInfo);
     // per-mosque weekly totals
     const rowsHTML = monthMosques.map(m=>{
-      let weekCartons = 0;
+      let weekCartons = 0, weekPackets = 0;
       const dayCells = dateStrs.map(ds=>{
         if(!ds) return `<td class="mt-na">/</td>`;
         const qty = distributedFor(m.id, ds);
         weekCartons += qty;
+        weekPackets += packetsFor(m.id, ds);
         return `<td>${qty||''}</td>`;
       }).join('');
       weeklyTotals[m.id][wIdx] = weekCartons;
       monthlyTotals[m.id] += weekCartons;
+      weeklyPackets[m.id][wIdx] = weekPackets;
+      monthlyPackets[m.id] += weekPackets;
       return `<tr>
         <td class="mt-label">${m.name}</td>
         ${dayCells}
         <td>${weekCartons.toFixed(1)}</td>
-        <td>${Math.round(weekCartons*40)}</td>
+        <td>${Math.round(weekPackets)}</td>
         <td>${(weekCartons*2).toFixed(1)}</td>
       </tr>`;
     }).join('');
 
     const weekTotalCartons = monthMosques.reduce((s,m)=>s+weeklyTotals[m.id][wIdx],0);
+    const weekTotalPackets = monthMosques.reduce((s,m)=>s+weeklyPackets[m.id][wIdx],0);
     const totalDayCells = dateStrs.map(ds=>{
       if(!ds) return `<td class="mt-na">/</td>`;
       const t = monthMosques.reduce((s,m)=>s+distributedFor(m.id,ds),0);
@@ -3346,7 +3421,7 @@ async function loadAndRenderMonthly(){
             <td class="mt-label">المجموع الكلي للتوزيع</td>
             ${totalDayCells}
             <td>${weekTotalCartons.toFixed(1)}</td>
-            <td>${Math.round(weekTotalCartons*40)}</td>
+            <td>${Math.round(weekTotalPackets)}</td>
             <td>${(weekTotalCartons*2).toFixed(1)}</td>
           </tr>
         </tbody>
@@ -3368,7 +3443,7 @@ async function loadAndRenderMonthly(){
       ${weekCells}
       <td><strong>${grandTotal>0 ? totalPct.toFixed(0)+'%' : '—'}</strong></td>
       <td>${(monthlyTotals[m.id]*2).toFixed(1)}</td>
-      <td>${Math.round(monthlyTotals[m.id]*40)}</td>
+      <td>${Math.round(monthlyPackets[m.id])}</td>
       <td>${monthlyTotals[m.id].toFixed(1)}</td>
     </tr>`;
   }).join('');
@@ -3379,37 +3454,46 @@ async function loadAndRenderMonthly(){
 
   const fridgeMonthlyTotals = {}, tankerMonthlyTotals = {};
   const fridgeWeeklyTotals = {}, tankerWeeklyTotals = {};
+  const fridgeMonthlyPackets = {}, fridgeWeeklyPackets = {};
   monthMosques.forEach(m=>{
     fridgeWeeklyTotals[m.id] = [0,0,0,0,0];
     tankerWeeklyTotals[m.id] = [0,0,0,0,0];
-    let fSum=0, tSum=0;
+    fridgeWeeklyPackets[m.id] = [0,0,0,0,0];
+    let fSum=0, tSum=0, fPacketSum=0;
     weeks.forEach((days, wIdx)=>{
-      let fWeek=0, tWeek=0;
+      let fWeek=0, tWeek=0, fPacketWeek=0;
       days.forEach(dayNum=>{
         const ds = dayInfo(dayNum);
         if(!ds) return;
         fWeek += withdrawnFor(m.id, ds);
         tWeek += tankerOnlyFor(m.id, ds);
+        fPacketWeek += fridgeBottlesFor(m.id, ds);
       });
       fridgeWeeklyTotals[m.id][wIdx] = fWeek;
       tankerWeeklyTotals[m.id][wIdx] = tWeek;
-      fSum += fWeek; tSum += tWeek;
+      fridgeWeeklyPackets[m.id][wIdx] = fPacketWeek;
+      fSum += fWeek; tSum += tWeek; fPacketSum += fPacketWeek;
     });
     fridgeMonthlyTotals[m.id] = fSum;
     tankerMonthlyTotals[m.id] = tSum;
+    fridgeMonthlyPackets[m.id] = fPacketSum;
   });
   const fridgeGrandTotal = monthMosques.reduce((s,m)=>s+fridgeMonthlyTotals[m.id],0);
   const tankerGrandTotal = monthMosques.reduce((s,m)=>s+tankerMonthlyTotals[m.id],0);
-  const sourceSummaryRows = (weeklyObj, totalsObj, gTotal)=>monthMosques.map(m=>{
+  const sourceSummaryRows = (weeklyObj, totalsObj, gTotal, packetsObj)=>{
+    const packetFor = (id)=> packetsObj ? packetsObj[id] : Math.round(totalsObj[id]*currentPacketMult());
+    const gPackets = packetsObj ? monthMosques.reduce((s,m)=>s+packetsObj[m.id],0) : Math.round(gTotal*currentPacketMult());
+    return monthMosques.map(m=>{
     const weekCells = weeklyObj[m.id].map((wc,wIdx)=>{
       const weekAllTotal = monthMosques.reduce((s,mm)=>s+weeklyObj[mm.id][wIdx],0);
       return `<td>${weekAllTotal>0?Math.round(wc/weekAllTotal*100)+'%':'—'}</td>`;
     }).join('');
-    return `<tr><td class="mt-label">${m.name}</td>${weekCells}<td><strong>${gTotal>0?Math.round(totalsObj[m.id]/gTotal*100)+'%':'—'}</strong></td><td>${(totalsObj[m.id]*2).toFixed(1)}</td><td>${Math.round(totalsObj[m.id]*40)}</td><td>${totalsObj[m.id].toFixed(1)}</td></tr>`;
+    return `<tr><td class="mt-label">${m.name}</td>${weekCells}<td><strong>${gTotal>0?Math.round(totalsObj[m.id]/gTotal*100)+'%':'—'}</strong></td><td>${(totalsObj[m.id]*2).toFixed(1)}</td><td>${Math.round(packetFor(m.id))}</td><td>${totalsObj[m.id].toFixed(1)}</td></tr>`;
   }).join('') + `<tr class="mt-total-row"><td class="mt-label">${state.monthlyColumnLabels.grandTotal}</td>${[0,1,2,3,4].map(wIdx=>{
     const weekAllTotal = monthMosques.reduce((s,mm)=>s+weeklyObj[mm.id][wIdx],0);
     return `<td>${weekAllTotal>0?'100%':'—'}</td>`;
-  }).join('')}<td>${gTotal>0?'100%':'—'}</td><td>${(gTotal*2).toFixed(1)}</td><td>${Math.round(gTotal*40)}</td><td>${gTotal.toFixed(1)}</td></tr>`;
+  }).join('')}<td>${gTotal>0?'100%':'—'}</td><td>${(gTotal*2).toFixed(1)}</td><td>${Math.round(gPackets)}</td><td>${gTotal.toFixed(1)}</td></tr>`;
+  };
 
   content.innerHTML = `
     ${weekBlocksHTML}
@@ -3431,7 +3515,7 @@ async function loadAndRenderMonthly(){
             ${totalWeekCells}
             <td>${grandTotal>0?'100%':'—'}</td>
             <td>${(grandTotal*2).toFixed(1)}</td>
-            <td>${Math.round(grandTotal*40)}</td>
+            <td>${Math.round(monthMosques.reduce((s,m)=>s+monthlyPackets[m.id],0))}</td>
             <td>${grandTotal.toFixed(1)}</td>
           </tr>
         </tbody>
@@ -3442,7 +3526,7 @@ async function loadAndRenderMonthly(){
       <div class="month-table-wrap" style="border:none;margin-bottom:22px">
         <table class="month-summary-table">
           <thead><tr><th>${state.monthlyColumnLabels.site}</th><th>الأسبوع الأول</th><th>الأسبوع الثاني</th><th>الأسبوع الثالث</th><th>الأسبوع الرابع</th><th>الأسبوع الخامس</th><th>${state.monthlyColumnLabels.percentage}</th><th>${state.monthlyColumnLabels.totalBundles}</th><th>${state.monthlyColumnLabels.totalPackets}</th><th>${state.monthlyColumnLabels.totalCartons}</th></tr></thead>
-          <tbody>${sourceSummaryRows(fridgeWeeklyTotals, fridgeMonthlyTotals, fridgeGrandTotal)}</tbody>
+          <tbody>${sourceSummaryRows(fridgeWeeklyTotals, fridgeMonthlyTotals, fridgeGrandTotal, fridgeMonthlyPackets)}</tbody>
         </table>
       </div>
       <h4>إجمالي ${state.monthlyLabels.tankerSourceName}</h4>
@@ -3453,30 +3537,54 @@ async function loadAndRenderMonthly(){
         </table>
       </div>
     </div>
+    ${!state.monthlyBottleSizeFilter ? (()=>{
+      const bySize = {}; monthMosques.forEach(m=>bySize[m.id]={b330:0,b200:0});
+      let grand330=0, grand200=0;
+      monthMosques.forEach(m=>{
+        Object.values(data[m.id]||{}).forEach(rec=>{
+          if(!rec || !rec.gsApproved) return;
+          const b330 = bottlesForRecordBySize(rec,'330'), b200 = bottlesForRecordBySize(rec,'200');
+          bySize[m.id].b330 += b330; bySize[m.id].b200 += b200;
+          grand330 += b330; grand200 += b200;
+        });
+      });
+      const rows = monthMosques.map(m=>`<tr><td>${m.name}</td><td>${bySize[m.id].b330}</td><td>${bySize[m.id].b200}</td><td><strong>${bySize[m.id].b330+bySize[m.id].b200}</strong></td></tr>`).join('');
+      return `
+      <div class="card" style="margin-top:20px">
+        <h4 style="margin-top:0">تفصيل عدد العبوات حسب الحجم</h4>
+        <table class="kv-table">
+          <tr><td><strong>الموقع</strong></td><td><strong>330 مل</strong></td><td><strong>200 مل</strong></td><td><strong>الإجمالي</strong></td></tr>
+          ${rows}
+          <tr><td><strong>إجمالي الجميع</strong></td><td><strong>${grand330}</strong></td><td><strong>${grand200}</strong></td><td><strong>${grand330+grand200}</strong></td></tr>
+        </table>
+      </div>`;
+    })() : ''}
   `;
-  state.lastMonthlyExportData = {type:'current', yyyymm, monthMosques, weeks, weekLabels, dayInfo, distributedFor, sourceLabel, tankerMosquesLabel, weeklyTotals, fridgeWeeklyTotals, tankerWeeklyTotals, monthlyTotals, grandTotal, fridgeTotals: fridgeMonthlyTotals, fridgeGrandTotal, tankerTotals: tankerMonthlyTotals, tankerGrandTotal};
+  state.lastMonthlyExportData = {type:'current', yyyymm, monthMosques, weeks, weekLabels, dayInfo, distributedFor, packetsFor, sourceLabel, tankerMosquesLabel, weeklyTotals, fridgeWeeklyTotals, tankerWeeklyTotals, monthlyTotals, grandTotal, fridgeTotals: fridgeMonthlyTotals, fridgeGrandTotal, tankerTotals: tankerMonthlyTotals, tankerGrandTotal, weeklyPackets, monthlyPackets, fridgeWeeklyPackets, fridgeMonthlyPackets};
 }
-function exportRangeExcel(mode, rangeLabel, rangeMosques, totals, fridgeTotals, tankerTotals){
+function exportRangeExcel(mode, rangeLabel, rangeMosques, totals, fridgeTotals, tankerTotals, packets, fridgePackets){
   const headerBg = '#17256E';
   const totalBg = '#EFE9DA';
   const th = (txt)=>`<th style="background:${headerBg};color:#ffffff;font-weight:bold;border:1px solid #999;padding:4px;white-space:nowrap">${txt}</th>`;
   const td = (txt, extra)=>`<td style="border:1px solid #ccc;padding:4px;text-align:center;${extra||''}">${txt}</td>`;
   const cl = state.monthlyColumnLabels;
-  function block(valuesObj, titleLabel){
+  function block(valuesObj, titleLabel, packetsObj){
     const gt = rangeMosques.reduce((s,m)=>s+valuesObj[m.id],0);
+    const packetFor = (id)=> packetsObj ? packetsObj[id] : Math.round(valuesObj[id]*currentPacketMult());
+    const gPackets = packetsObj ? rangeMosques.reduce((s,m)=>s+packetsObj[m.id],0) : Math.round(gt*currentPacketMult());
     return `<table style="border-collapse:collapse;font-family:Arial">
       <tr>${th(cl.site)}${th(cl.percentage)}${th(cl.totalBundles)}${th(cl.totalPackets)}${th(titleLabel||cl.totalCartons)}</tr>
-      ${rangeMosques.map(m=>`<tr>${td(m.name, 'font-weight:bold')}${td(gt>0?Math.round(valuesObj[m.id]/gt*100)+'%':'—')}${td((valuesObj[m.id]*2).toFixed(1))}${td(Math.round(valuesObj[m.id]*40))}${td(valuesObj[m.id].toFixed(1))}</tr>`).join('')}
-      <tr>${td(cl.grandTotal, `background:${totalBg};font-weight:bold`)}${td(gt>0?'100%':'—', `background:${totalBg}`)}${td((gt*2).toFixed(1), `background:${totalBg}`)}${td(Math.round(gt*40), `background:${totalBg}`)}${td(gt.toFixed(1), `background:${totalBg};font-weight:bold`)}</tr>
+      ${rangeMosques.map(m=>`<tr>${td(m.name, 'font-weight:bold')}${td(gt>0?Math.round(valuesObj[m.id]/gt*100)+'%':'—')}${td((valuesObj[m.id]*2).toFixed(1))}${td(Math.round(packetFor(m.id)))}${td(valuesObj[m.id].toFixed(1))}</tr>`).join('')}
+      <tr>${td(cl.grandTotal, `background:${totalBg};font-weight:bold`)}${td(gt>0?'100%':'—', `background:${totalBg}`)}${td((gt*2).toFixed(1), `background:${totalBg}`)}${td(Math.round(gPackets), `background:${totalBg}`)}${td(gt.toFixed(1), `background:${totalBg};font-weight:bold`)}</tr>
     </table>`;
   }
   let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
     <head><meta charset="UTF-8"></head>
     <body dir="rtl">
     <p style="font-family:Arial;font-weight:bold">${rangeLabel}</p>
-    ${block(totals)}
+    ${block(totals, null, packets)}
     <br><p style="font-family:Arial;font-weight:bold">إجمالي ${state.monthlyLabels.fridgeSourceName}</p>
-    ${block(fridgeTotals, `إجمالي ${state.monthlyLabels.fridgeSourceName}`)}
+    ${block(fridgeTotals, `إجمالي ${state.monthlyLabels.fridgeSourceName}`, fridgePackets)}
     <br><p style="font-family:Arial;font-weight:bold">إجمالي ${state.monthlyLabels.tankerSourceName}</p>
     ${block(tankerTotals, `إجمالي ${state.monthlyLabels.tankerSourceName}`)}
     </body></html>`;
@@ -3491,7 +3599,7 @@ function exportRangeExcel(mode, rangeLabel, rangeMosques, totals, fridgeTotals, 
   URL.revokeObjectURL(url);
 }
 function exportMonthlyExcel(d){
-  const {yyyymm, monthMosques, weeks, weekLabels, dayInfo, distributedFor, sourceLabel, tankerMosquesLabel, weeklyTotals, fridgeWeeklyTotals, tankerWeeklyTotals, monthlyTotals, grandTotal, fridgeTotals, fridgeGrandTotal, tankerTotals, tankerGrandTotal} = d;
+  const {yyyymm, monthMosques, weeks, weekLabels, dayInfo, distributedFor, packetsFor, sourceLabel, tankerMosquesLabel, weeklyTotals, fridgeWeeklyTotals, tankerWeeklyTotals, monthlyTotals, grandTotal, fridgeTotals, fridgeGrandTotal, tankerTotals, tankerGrandTotal, weeklyPackets, monthlyPackets, fridgeWeeklyPackets, fridgeMonthlyPackets} = d;
   const headerBg = '#17256E';
   const totalBg = '#EFE9DA';
   const th = (txt)=>`<th style="background:${headerBg};color:#ffffff;font-weight:bold;border:1px solid #999;padding:4px;white-space:nowrap">${txt}</th>`;
@@ -3510,9 +3618,10 @@ function exportMonthlyExcel(d){
         weekCartons += qty;
         return td(qty||'');
       }).join('');
-      return `<tr>${td(m.name,'font-weight:bold')}${dayCells}${td(weekCartons.toFixed(1))}${td(Math.round(weekCartons*40))}${td((weekCartons*2).toFixed(1))}</tr>`;
+      return `<tr>${td(m.name,'font-weight:bold')}${dayCells}${td(weekCartons.toFixed(1))}${td(Math.round(weeklyPackets[m.id][wIdx]))}${td((weekCartons*2).toFixed(1))}</tr>`;
     }).join('');
     const weekTotalCartons = monthMosques.reduce((s,m)=>s+weeklyTotals[m.id][wIdx],0);
+    const weekTotalPackets = monthMosques.reduce((s,m)=>s+weeklyPackets[m.id][wIdx],0);
     const totalDayCells = dateStrs.map(ds=>{
       if(!ds) return td('/', `background:${totalBg}`);
       const t = monthMosques.reduce((s,m)=>s+distributedFor(m.id,ds),0);
@@ -3523,7 +3632,7 @@ function exportMonthlyExcel(d){
     <table style="border-collapse:collapse;font-family:Arial">
       <tr>${th(cl.site)}${dayHeaders}${th(cl.totalCartons)}${th(cl.totalPackets)}${th(cl.totalBundles)}</tr>
       ${rows}
-      <tr>${td('المجموع الكلي للتوزيع', `background:${totalBg};font-weight:bold`)}${totalDayCells}${td(weekTotalCartons.toFixed(1), `background:${totalBg}`)}${td(Math.round(weekTotalCartons*40), `background:${totalBg}`)}${td((weekTotalCartons*2).toFixed(1), `background:${totalBg}`)}</tr>
+      <tr>${td('المجموع الكلي للتوزيع', `background:${totalBg};font-weight:bold`)}${totalDayCells}${td(weekTotalCartons.toFixed(1), `background:${totalBg}`)}${td(Math.round(weekTotalPackets), `background:${totalBg}`)}${td((weekTotalCartons*2).toFixed(1), `background:${totalBg}`)}</tr>
     </table>
     <br>`;
   }).join('');
@@ -3536,29 +3645,31 @@ function exportMonthlyExcel(d){
   const mainRows = monthMosques.map(m=>{
     const weekCells = [0,1,2,3,4].map(wIdx=>td(weekPct(m.id, wIdx))).join('');
     const pct = grandTotal>0 ? Math.round(monthlyTotals[m.id]/grandTotal*100)+'%' : '—';
-    return `<tr>${td(m.name,'font-weight:bold')}${weekCells}${td(pct)}${td((monthlyTotals[m.id]*2).toFixed(1))}${td(Math.round(monthlyTotals[m.id]*40))}${td(monthlyTotals[m.id].toFixed(1))}</tr>`;
+    return `<tr>${td(m.name,'font-weight:bold')}${weekCells}${td(pct)}${td((monthlyTotals[m.id]*2).toFixed(1))}${td(Math.round(monthlyPackets[m.id]))}${td(monthlyTotals[m.id].toFixed(1))}</tr>`;
   }).join('');
   const totalWeekCells = [0,1,2,3,4].map(wIdx=>{
     const weekAllTotal = monthMosques.reduce((s,mm)=>s+weeklyTotals[mm.id][wIdx],0);
     return td(weekAllTotal>0?'100%':'—', `background:${totalBg}`);
   }).join('');
 
-  function sourceBlock(weeklyObj, totalsObj, gTotal, titleLabel){
+  function sourceBlock(weeklyObj, totalsObj, gTotal, titleLabel, packetsWeeklyObj, packetsTotalsObj){
     const rows = monthMosques.map(m=>{
       const weekCells = [0,1,2,3,4].map(wIdx=>{
         const weekAllTotal = monthMosques.reduce((s,mm)=>s+weeklyObj[mm.id][wIdx],0);
         return td(weekAllTotal>0?Math.round(weeklyObj[m.id][wIdx]/weekAllTotal*100)+'%':'—');
       }).join('');
-      return `<tr>${td(m.name,'font-weight:bold')}${weekCells}${td(gTotal>0?Math.round(totalsObj[m.id]/gTotal*100)+'%':'—')}${td((totalsObj[m.id]*2).toFixed(1))}${td(Math.round(totalsObj[m.id]*40))}${td(totalsObj[m.id].toFixed(1))}</tr>`;
+      const packetVal = packetsTotalsObj ? packetsTotalsObj[m.id] : Math.round(totalsObj[m.id]*currentPacketMult());
+      return `<tr>${td(m.name,'font-weight:bold')}${weekCells}${td(gTotal>0?Math.round(totalsObj[m.id]/gTotal*100)+'%':'—')}${td((totalsObj[m.id]*2).toFixed(1))}${td(Math.round(packetVal))}${td(totalsObj[m.id].toFixed(1))}</tr>`;
     }).join('');
     const totalWeeks = [0,1,2,3,4].map(wIdx=>{
       const weekAllTotal = monthMosques.reduce((s,mm)=>s+weeklyObj[mm.id][wIdx],0);
       return td(weekAllTotal>0?'100%':'—', `background:${totalBg}`);
     }).join('');
+    const gPackets = packetsTotalsObj ? monthMosques.reduce((s,m)=>s+packetsTotalsObj[m.id],0) : Math.round(gTotal*currentPacketMult());
     return `<table style="border-collapse:collapse;font-family:Arial">
       <tr>${th(cl.site)}<th style="background:${headerBg};color:#fff">الأسبوع الأول</th><th style="background:${headerBg};color:#fff">الأسبوع الثاني</th><th style="background:${headerBg};color:#fff">الأسبوع الثالث</th><th style="background:${headerBg};color:#fff">الأسبوع الرابع</th><th style="background:${headerBg};color:#fff">الأسبوع الخامس</th>${th(cl.percentage)}${th(cl.totalBundles)}${th(cl.totalPackets)}${th(titleLabel)}</tr>
       ${rows}
-      <tr>${td(cl.grandTotal, `background:${totalBg};font-weight:bold`)}${totalWeeks}${td(gTotal>0?'100%':'—', `background:${totalBg}`)}${td((gTotal*2).toFixed(1), `background:${totalBg}`)}${td(Math.round(gTotal*40), `background:${totalBg}`)}${td(gTotal.toFixed(1), `background:${totalBg};font-weight:bold`)}</tr>
+      <tr>${td(cl.grandTotal, `background:${totalBg};font-weight:bold`)}${totalWeeks}${td(gTotal>0?'100%':'—', `background:${totalBg}`)}${td((gTotal*2).toFixed(1), `background:${totalBg}`)}${td(Math.round(gPackets), `background:${totalBg}`)}${td(gTotal.toFixed(1), `background:${totalBg};font-weight:bold`)}</tr>
     </table>`;
   }
 
@@ -3570,11 +3681,11 @@ function exportMonthlyExcel(d){
     <table style="border-collapse:collapse;font-family:Arial">
       <tr>${th(cl.site)}<th style="background:${headerBg};color:#fff">الأسبوع الأول</th><th style="background:${headerBg};color:#fff">الأسبوع الثاني</th><th style="background:${headerBg};color:#fff">الأسبوع الثالث</th><th style="background:${headerBg};color:#fff">الأسبوع الرابع</th><th style="background:${headerBg};color:#fff">الأسبوع الخامس</th>${th(cl.percentage)}${th(cl.totalBundles)}${th(cl.totalPackets)}${th(cl.totalCartons)}</tr>
       ${mainRows}
-      <tr>${td(cl.grandTotal, `background:${totalBg};font-weight:bold`)}${totalWeekCells}${td(grandTotal>0?'100%':'—', `background:${totalBg}`)}${td((grandTotal*2).toFixed(1), `background:${totalBg}`)}${td(Math.round(grandTotal*40), `background:${totalBg}`)}${td(grandTotal.toFixed(1), `background:${totalBg};font-weight:bold`)}</tr>
+      <tr>${td(cl.grandTotal, `background:${totalBg};font-weight:bold`)}${totalWeekCells}${td(grandTotal>0?'100%':'—', `background:${totalBg}`)}${td((grandTotal*2).toFixed(1), `background:${totalBg}`)}${td(Math.round(grandTotal*currentPacketMult()), `background:${totalBg}`)}${td(grandTotal.toFixed(1), `background:${totalBg};font-weight:bold`)}</tr>
     </table>
     <br>
     <p style="font-family:Arial;font-weight:bold">إجمالي ${state.monthlyLabels.fridgeSourceName}</p>
-    ${sourceBlock(fridgeWeeklyTotals, fridgeTotals, fridgeGrandTotal, `إجمالي ${state.monthlyLabels.fridgeSourceName}`)}
+    ${sourceBlock(fridgeWeeklyTotals, fridgeTotals, fridgeGrandTotal, `إجمالي ${state.monthlyLabels.fridgeSourceName}`, fridgeWeeklyPackets, fridgeMonthlyPackets)}
     <br>
     <p style="font-family:Arial;font-weight:bold">إجمالي ${state.monthlyLabels.tankerSourceName}</p>
     ${sourceBlock(tankerWeeklyTotals, tankerTotals, tankerGrandTotal, `إجمالي ${state.monthlyLabels.tankerSourceName}`)}
@@ -3614,7 +3725,8 @@ async function loadAndRenderRange(){
   // load and sum data for every selected month
   const totals = {}; // [mosqueId] = cartons (combined)
   const fridgeTotals = {}, tankerTotals = {};
-  rangeMosques.forEach(m=>{ totals[m.id] = 0; fridgeTotals[m.id] = 0; tankerTotals[m.id] = 0; });
+  const packets = {}, fridgePackets = {}; // عدد عبوات دقيق (لكل حجم على حدة، مع مراعاة الخليط بين المقاسين)
+  rangeMosques.forEach(m=>{ totals[m.id] = 0; fridgeTotals[m.id] = 0; tankerTotals[m.id] = 0; packets[m.id] = 0; fridgePackets[m.id] = 0; });
   for(const yyyymm of months){
     const data = await loadMonthData(yyyymm);
     const total = daysInMonth(yyyymm);
@@ -3623,10 +3735,17 @@ async function loadAndRenderRange(){
         const dateStr = monthDateStr(yyyymm, d);
         const rec = data[m.id] ? data[m.id][dateStr] : null;
         const approvedRec = (rec && rec.gsApproved) ? rec : null;
-        totals[m.id] += totalDistributedFromRecord(approvedRec);
+        totals[m.id] += monthlyDistributedFromRecord(approvedRec);
         if(approvedRec){
           fridgeTotals[m.id] += (approvedRec.withdrawals||[]).reduce((s,w)=>s+(Number(w.qty)||0),0);
           tankerTotals[m.id] += Number(approvedRec.qtyDistributed)||0;
+          if(state.monthlyBottleSizeFilter){
+            packets[m.id] += bottlesForRecordBySize(approvedRec, state.monthlyBottleSizeFilter);
+            fridgePackets[m.id] += (approvedRec.withdrawals||[]).filter(w=>(w.bottleSize||'330')===state.monthlyBottleSizeFilter).reduce((s,w)=>s+bottlesForEntry(w),0);
+          } else {
+            packets[m.id] += bottlesForRecordBySize(approvedRec,'330') + bottlesForRecordBySize(approvedRec,'200');
+            fridgePackets[m.id] += (approvedRec.withdrawals||[]).reduce((s,w)=>s+bottlesForEntry(w),0);
+          }
         }
       }
     });
@@ -3634,15 +3753,17 @@ async function loadAndRenderRange(){
 
   const grandTotal = rangeMosques.reduce((s,m)=>s+totals[m.id],0);
   const cl = state.monthlyColumnLabels;
-  function summaryTableHTML(wrapId, valuesObj, extraColLabel){
+  function summaryTableHTML(wrapId, valuesObj, extraColLabel, packetsObj){
     const gt = rangeMosques.reduce((s,m)=>s+valuesObj[m.id],0);
+    const packetFor = (id)=> packetsObj ? packetsObj[id] : Math.round(valuesObj[id]*currentPacketMult());
+    const gPackets = packetsObj ? rangeMosques.reduce((s,m)=>s+packetsObj[m.id],0) : Math.round(gt*currentPacketMult());
     const rows = rangeMosques.map(m=>{
       const pct = gt>0 ? (valuesObj[m.id]/gt*100) : 0;
       return `<tr>
         <td class="mt-label">${m.name}${m.active===false?' <span class="badge badge-no">مؤرشف</span>':''}</td>
         <td><strong>${gt>0 ? pct.toFixed(0)+'%' : '—'}</strong></td>
         <td>${(valuesObj[m.id]*2).toFixed(1)}</td>
-        <td>${Math.round(valuesObj[m.id]*40)}</td>
+        <td>${Math.round(packetFor(m.id))}</td>
         <td>${valuesObj[m.id].toFixed(1)}</td>
       </tr>`;
     }).join('');
@@ -3663,7 +3784,7 @@ async function loadAndRenderRange(){
             <td class="mt-label">${cl.grandTotal}</td>
             <td>${gt>0?'100%':'—'}</td>
             <td>${(gt*2).toFixed(1)}</td>
-            <td>${Math.round(gt*40)}</td>
+            <td>${Math.round(gPackets)}</td>
             <td>${gt.toFixed(1)}</td>
           </tr>
         </tbody>
@@ -3674,11 +3795,11 @@ async function loadAndRenderRange(){
   const rangeLabel = months.join('، ');
   content.innerHTML = `
     <p class="muted small">إحصائية مجمّعة للأشهر المحددة يدويًا (${rangeLabel}) — تشمل كل موقع كان له تسجيل خلال هذه الأشهر، حتى لو أُضيف أو أُزيل في منتصفها.</p>
-    ${summaryTableHTML('rangeFullTableWrap', totals)}
-    ${summaryTableHTML('rangeFridgeTableWrap', fridgeTotals, state.monthlyLabels.fridgeSourceName)}
+    ${summaryTableHTML('rangeFullTableWrap', totals, null, packets)}
+    ${summaryTableHTML('rangeFridgeTableWrap', fridgeTotals, state.monthlyLabels.fridgeSourceName, fridgePackets)}
     ${summaryTableHTML('rangeTankerTableWrap', tankerTotals, state.monthlyLabels.tankerSourceName)}
   `;
-  state.lastMonthlyExportData = {type:'range', mode, rangeLabel, rangeMosques, totals, fridgeTotals, tankerTotals};
+  state.lastMonthlyExportData = {type:'range', mode, rangeLabel, rangeMosques, totals, fridgeTotals, tankerTotals, packets, fridgePackets};
 }
 /* ---- indicator (المؤشر) tab ---- */
 function renderAdminIndicator(main){
@@ -3789,6 +3910,10 @@ async function renderIndicatorDailyDetail(mosqueId){
   const rec = await loadRecord(mosqueId, state.indicatorDailyDate);
   const totalWithdrawn = (rec.withdrawals||[]).reduce((s,w)=>s+(Number(w.qty)||0),0);
   const remaining = (Number(rec.openingStock)||0) + (Number(rec.newCartons)||0) - totalWithdrawn;
+  const remaining330 = remainingBySize(rec, '330');
+  const remaining200 = remainingBySize(rec, '200');
+  const withdrawn330 = withdrawnBySize(rec, '330');
+  const withdrawn200 = withdrawnBySize(rec, '200');
   const base = Math.max(0, remaining) + Math.max(0, totalWithdrawn);
   const remPct = base>0 ? Math.round(Math.max(0,remaining)/base*100) : 0;
   const witPct = base>0 ? Math.round(Math.max(0,totalWithdrawn)/base*100) : 0;
@@ -3818,6 +3943,13 @@ async function renderIndicatorDailyDetail(mosqueId){
     <table class="kv-table" style="max-width:320px;margin:14px auto 0">
       <tr><td>${state.indicatorLabels.fridgeBalance}</td><td><span class="kv-readonly" style="color:${green};font-weight:800">${remaining}</span></td></tr>
       <tr><td>${state.indicatorLabels.withdrawnQty}</td><td><span class="kv-readonly" style="color:${red};font-weight:800">${totalWithdrawn}</span></td></tr>
+    </table>
+    <table class="kv-table" style="max-width:320px;margin:10px auto 0">
+      <tr><td colspan="2" style="text-align:center"><strong>تفصيل حسب حجم العبوة</strong></td></tr>
+      <tr><td>330 مل — المتبقي</td><td><span class="kv-readonly" style="color:${green}">${remaining330}</span></td></tr>
+      <tr><td>330 مل — السحب</td><td><span class="kv-readonly" style="color:${red}">${withdrawn330}</span></td></tr>
+      <tr><td>200 مل — المتبقي</td><td><span class="kv-readonly" style="color:${green}">${remaining200}</span></td></tr>
+      <tr><td>200 مل — السحب</td><td><span class="kv-readonly" style="color:${red}">${withdrawn200}</span></td></tr>
     </table>
   `;
   document.getElementById('indDailyDateInput').addEventListener('change', e=>{
@@ -3914,6 +4046,7 @@ function renderIndicatorSlots(main, mosqueId){
   });
 }
 async function loadAndRenderIndicator(mosqueId){
+  state.monthlyBottleSizeFilter = null; // المؤشر always computes unfiltered, regardless of prior navigation
   const content = document.getElementById('indicatorContent');
   content.innerHTML = `<div class="empty-state">جارٍ التحميل…</div>`;
   const mode = state.indicatorMode;
@@ -3938,12 +4071,14 @@ async function loadAndRenderIndicator(mosqueId){
     const total = daysInMonth(yyyymm);
     for(let d=1; d<=total; d++){
       const dateStr = monthDateStr(yyyymm, d);
-      const values = {};
+      const values = {}, values330 = {}, values200 = {};
       rangeMosques.forEach(mm=>{
         const rec = data[mm.id] ? data[mm.id][dateStr] : null;
         values[mm.id] = totalDistributedFromRecord(rec);
+        values330[mm.id] = cartonsForRecordBySize(rec, '330');
+        values200[mm.id] = cartonsForRecordBySize(rec, '200');
       });
-      days.push({date: dateStr, values});
+      days.push({date: dateStr, values, values330, values200});
     }
   }
 
@@ -3974,6 +4109,7 @@ async function avgCollaboratorsForMosque(mosqueId, months){
   return dayCount>0 ? (daySum/dayCount) : 0;
 }
 async function loadAndRenderIndicatorAll(){
+  state.monthlyBottleSizeFilter = null; // same defensive reset as above
   const content = document.getElementById('indicatorContent');
   content.innerHTML = `<div class="empty-state">جارٍ التحميل…</div>`;
   const mode = state.indicatorMode;
@@ -3996,12 +4132,14 @@ async function loadAndRenderIndicatorAll(){
     const total = daysInMonth(yyyymm);
     for(let d=1; d<=total; d++){
       const dateStr = monthDateStr(yyyymm, d);
-      const values = {};
+      const values = {}, values330 = {}, values200 = {};
       rangeMosques.forEach(mm=>{
         const rec = data[mm.id] ? data[mm.id][dateStr] : null;
         values[mm.id] = totalDistributedFromRecord(rec);
+        values330[mm.id] = cartonsForRecordBySize(rec, '330');
+        values200[mm.id] = cartonsForRecordBySize(rec, '200');
       });
-      days.push({date: dateStr, values});
+      days.push({date: dateStr, values, values330, values200});
     }
   }
 
@@ -4062,9 +4200,14 @@ function renderIndicatorChart(content, rangeMosques, days, collabInfo){
   // max/min per mosque across the selected period
   const maxMinHTML = rangeMosques.map(m=>{
     let maxDay = days[0], minDay = days[0];
+    let maxDay330 = days[0], minDay330 = days[0], maxDay200 = days[0], minDay200 = days[0];
     days.forEach(d=>{
       if(d.values[m.id] > maxDay.values[m.id]) maxDay = d;
       if(d.values[m.id] < minDay.values[m.id]) minDay = d;
+      if(d.values330[m.id] > maxDay330.values330[m.id]) maxDay330 = d;
+      if(d.values330[m.id] < minDay330.values330[m.id]) minDay330 = d;
+      if(d.values200[m.id] > maxDay200.values200[m.id]) maxDay200 = d;
+      if(d.values200[m.id] < minDay200.values200[m.id]) minDay200 = d;
     });
     const fmt = d => {
       const parts = [];
@@ -4082,6 +4225,12 @@ function renderIndicatorChart(content, rangeMosques, days, collabInfo){
         <div><div class="label" style="margin-bottom:2px">${state.indicatorLabels.maxLabel}</div><div class="kv-readonly">${maxDay.values[m.id].toFixed(1)}</div><div class="muted small">${fmt(maxDay)}</div></div>
         <div><div class="label" style="margin-bottom:2px">${state.indicatorLabels.minLabel}</div><div class="kv-readonly">${minDay.values[m.id].toFixed(1)}</div><div class="muted small">${fmt(minDay)}</div></div>
         ${collabInfo && collabInfo[m.id] ? `<div><div class="label" style="margin-bottom:2px">${collabInfo[m.id].label}</div><div class="kv-readonly">${collabInfo[m.id].value}</div></div>` : ''}
+      </div>
+      <div class="row gap-lg wrap" style="margin-top:10px;border-top:1px solid #EFE9DA;padding-top:10px">
+        <div><div class="label" style="margin-bottom:2px">${state.indicatorLabels.maxLabel} — 330 مل</div><div class="kv-readonly">${maxDay330.values330[m.id].toFixed(1)}</div><div class="muted small">${fmt(maxDay330)}</div></div>
+        <div><div class="label" style="margin-bottom:2px">${state.indicatorLabels.minLabel} — 330 مل</div><div class="kv-readonly">${minDay330.values330[m.id].toFixed(1)}</div><div class="muted small">${fmt(minDay330)}</div></div>
+        <div><div class="label" style="margin-bottom:2px">${state.indicatorLabels.maxLabel} — 200 مل</div><div class="kv-readonly">${maxDay200.values200[m.id].toFixed(1)}</div><div class="muted small">${fmt(maxDay200)}</div></div>
+        <div><div class="label" style="margin-bottom:2px">${state.indicatorLabels.minLabel} — 200 مل</div><div class="kv-readonly">${minDay200.values200[m.id].toFixed(1)}</div><div class="muted small">${fmt(minDay200)}</div></div>
       </div>
     </div>`;
   }).join('');
@@ -6293,7 +6442,12 @@ function renderGsMain(){
   } else if(state.gsTab==='livereports'){
     renderAdminLiveReports(main);
   } else if(state.gsTab==='monthly'){
+    state.monthlyBottleSizeFilter=null; state.monthlySizeTitle=null;
     renderAdminMonthly(main);
+  } else if(state.gsTab==='cartons330'){
+    renderAdminMonthlyBySize(main, '330');
+  } else if(state.gsTab==='cartons200'){
+    renderAdminMonthlyBySize(main, '200');
   } else if(state.gsTab==='attendlog'){
     renderAttendLogPage(main);
   } else if(state.gsTab==='online'){
@@ -6337,8 +6491,10 @@ async function renderGsSupplierOrderPage(main){
         const manualVal = rec.supplierOrderConfirmed ? (rec.orderRequestedQty||0) : (rec.pendingManualQty||0);
         const daysEl = document.getElementById(`gspDays_${m.id}`);
         if(daysEl) daysEl.innerHTML = daysBreakdownHTML(lives[m.id].days);
-        const manualInputEl = document.getElementById(`gspManualInput_${m.id}`);
-        if(manualInputEl && document.activeElement!==manualInputEl) manualInputEl.value = manualVal;
+        const manual330El = document.getElementById(`gspManualInput330_${m.id}`);
+        if(manual330El && document.activeElement!==manual330El) manual330El.value = rec.supplierOrderConfirmed ? (rec.orderRequestedQty330||0) : (rec.pendingManualQty330||0);
+        const manual200El = document.getElementById(`gspManualInput200_${m.id}`);
+        if(manual200El && document.activeElement!==manual200El) manual200El.value = rec.supplierOrderConfirmed ? (rec.orderRequestedQty200||0) : (rec.pendingManualQty200||0);
         const shortEl = document.getElementById(`gspShortfallWrap_${m.id}`);
         if(shortEl) shortEl.innerHTML = shortfallControlHTML(mosqueById(m.id).supplierShortfall || 0, getSupplierOrderLabels(m.id), recs[m.id].supplierOrderConfirmed);
         const timeEl = document.getElementById(`gspTime_${m.id}`);
@@ -6380,7 +6536,10 @@ async function renderGsSupplierOrderPage(main){
           ${(L.limitNoteVisible!==false && L.limitNoteText) ? `<p class="muted small" style="margin-top:6px">${L.limitNoteText}</p>` : ''}
           <table class="kv-table" style="margin-top:10px">
             ${L.qtyVisible!==false ? `<tr><td>${L.qtyLabel}</td><td>
-              <input type="number" class="input" id="gspManualInput_${m.id}" style="max-width:120px;display:inline-block" value="${manualVal}" min="0" ${locked?'disabled':''}>
+              <span class="row gap-sm" style="align-items:center;flex-wrap:wrap">
+                <span class="muted small">330 مل</span><input type="number" class="input" id="gspManualInput330_${m.id}" style="max-width:100px;display:inline-block" value="${rec.supplierOrderConfirmed ? (rec.orderRequestedQty330||0) : (rec.pendingManualQty330||0)}" min="0" ${locked?'disabled':''}>
+                <span class="muted small">200 مل</span><input type="number" class="input" id="gspManualInput200_${m.id}" style="max-width:100px;display:inline-block" value="${rec.supplierOrderConfirmed ? (rec.orderRequestedQty200||0) : (rec.pendingManualQty200||0)}" min="0" ${locked?'disabled':''}>
+              </span>
               <span class="muted small" id="gspDays_${m.id}" style="margin-inline-start:10px">${daysBreakdownHTML(lives[m.id].days)}</span>
             </td></tr>` : ''}
             ${L.arrivalVisible!==false ? `<tr><td>${L.arrivalLabel}</td><td><input type="time" class="input" id="gspTime_${m.id}" style="max-width:150px" value="${rec.supplierArrivalTime||''}"></td></tr>` : ''}
@@ -6388,7 +6547,7 @@ async function renderGsSupplierOrderPage(main){
           ${L.shortfallVisible!==false ? `<div id="gspShortfallWrap_${m.id}" style="margin-top:8px">${shortfallControlHTML(m.supplierShortfall || 0, L, rec.supplierOrderConfirmed)}</div>` : ''}
           ${(rec.orderPendingGsApproval && !rec.supplierOrderConfirmed) ? `
           <div class="card" style="margin-top:10px;border:2px solid var(--gold);background:#FBF7EC">
-            <p style="margin:0 0 8px">⏳ طلب من مشرف الموقع بانتظار اعتمادك — الكمية المطلوبة: <strong>${rec.pendingManualQty||0}</strong></p>
+            <p style="margin:0 0 8px">⏳ طلب من مشرف الموقع بانتظار اعتمادك — الكمية المطلوبة: <strong>${rec.pendingManualQty||0}</strong> (330 مل: ${rec.pendingManualQty330||0} / 200 مل: ${rec.pendingManualQty200||0})</p>
             <div class="row gap-sm">
               <button class="btn btn-primary btn-sm" data-gs-approve-order="${m.id}">✅ اعتماد الطلب</button>
               <button class="btn btn-danger btn-sm" data-gs-reject-order="${m.id}">✕ رفض الطلب</button>
@@ -6423,11 +6582,22 @@ async function renderGsSupplierOrderPage(main){
         state.gsOrderDates[m.id] = e.target.value;
         refresh(false);
       });
-      const manualInput = document.getElementById(`gspManualInput_${m.id}`);
-      if(manualInput) manualInput.addEventListener('input', async e=>{
+      const manual330Input = document.getElementById(`gspManualInput330_${m.id}`);
+      if(manual330Input) manual330Input.addEventListener('input', async e=>{
         const orderDate = state.gsOrderDates[m.id];
         const latest = await loadRecord(m.id, orderDate);
-        latest.pendingManualQty = Number(e.target.value)||0;
+        latest.pendingManualQty330 = Number(e.target.value)||0;
+        latest.pendingManualQty200 = Number(document.getElementById(`gspManualInput200_${m.id}`)?.value)||0;
+        latest.pendingManualQty = latest.pendingManualQty330 + latest.pendingManualQty200;
+        await storageSet(recKey(m.id, orderDate), JSON.stringify(latest));
+      });
+      const manual200Input = document.getElementById(`gspManualInput200_${m.id}`);
+      if(manual200Input) manual200Input.addEventListener('input', async e=>{
+        const orderDate = state.gsOrderDates[m.id];
+        const latest = await loadRecord(m.id, orderDate);
+        latest.pendingManualQty200 = Number(e.target.value)||0;
+        latest.pendingManualQty330 = Number(document.getElementById(`gspManualInput330_${m.id}`)?.value)||0;
+        latest.pendingManualQty = latest.pendingManualQty330 + latest.pendingManualQty200;
         await storageSet(recKey(m.id, orderDate), JSON.stringify(latest));
       });
       const timeEl = document.getElementById(`gspTime_${m.id}`);
@@ -6472,7 +6642,7 @@ async function renderGsSupplierOrderPage(main){
   await refresh(false);
   if(gsSupplierOrderRefreshInterval) clearInterval(gsSupplierOrderRefreshInterval);
   gsSupplierOrderRefreshInterval = setInterval(()=>{
-    if(document.getElementById('adminMain') && (document.querySelector('[id^="gspManualInput_"]') || document.querySelector('[id^="gspOrdersLog_"]'))) refresh(true); else { clearInterval(gsSupplierOrderRefreshInterval); gsSupplierOrderRefreshInterval = null; }
+    if(document.getElementById('adminMain') && (document.querySelector('[id^="gspManualInput330_"]') || document.querySelector('[id^="gspOrdersLog_"]'))) refresh(true); else { clearInterval(gsSupplierOrderRefreshInterval); gsSupplierOrderRefreshInterval = null; }
   }, 5000);
 }
 let supplierRefreshInterval = null;
@@ -6534,6 +6704,8 @@ async function confirmSupplierOrder(mosqueId, dateStr, manualQty){
   rec.orderMode = 'manual';
   rec.orderAutoQty = live.total;
   rec.orderRequestedQty = (manualQty!==undefined && manualQty!==null) ? manualQty : 0;
+  rec.orderRequestedQty330 = rec.pendingManualQty330||0;
+  rec.orderRequestedQty200 = rec.pendingManualQty200||0;
   rec.orderClaimedDays = live.days.map(d=>d.date);
   rec.orderCancelled = false;
   await storageSet(recKey(mosqueId, dateStr), JSON.stringify(rec));
@@ -6578,13 +6750,24 @@ async function cancelSupplierOrder(mosqueId, dateStr, cancelledBy){
 async function computeMonthlySupplierTotal(mosqueId, yyyymm){
   const totalDays = daysInMonth(yyyymm);
   const lastDay = (yyyymm === state.today.slice(0,7)) ? Number(state.today.slice(8,10)) : totalDays;
-  let sum = 0;
+  let sum = 0, sum330 = 0, sum200 = 0;
+  const batch = await storageGetPrefix(recKey(mosqueId, ''));
   for(let d=1; d<=lastDay; d++){
     const ds = monthDateStr(yyyymm, d);
-    const rec = await loadRecord(mosqueId, ds);
-    if(rec.supplierOrderConfirmed && !rec.orderCancelled) sum += (rec.orderRequestedQty||0);
+    let rec;
+    if(batch){
+      const raw = batch[recKey(mosqueId, ds)];
+      rec = raw ? (safeParse(raw, null) || defaultRecordShape()) : defaultRecordShape();
+    } else {
+      rec = await loadRecord(mosqueId, ds);
+    }
+    if(rec.supplierOrderConfirmed && !rec.orderCancelled){
+      sum += (rec.orderRequestedQty||0);
+      sum330 += (rec.orderRequestedQty330||0);
+      sum200 += (rec.orderRequestedQty200||0);
+    }
   }
-  return sum; // مجموع الطلبات المرفوعة فعليًا خلال الشهر (لا يشمل الأيام التي لم يُرفع لها طلب)
+  return {total: sum, total330: sum330, total200: sum200}; // مجموع الطلبات المرفوعة فعليًا خلال الشهر (لا يشمل الأيام التي لم يُرفع لها طلب)
 }
 async function checkAndApplyShortfall(mosqueId, latest, dateStr){
   if(latest.supplierReceiptPhoto && (Number(latest.supplierDeliveredQty)||0)>0 && !latest.supplierShortfallCounted){
@@ -6621,7 +6804,7 @@ async function getRecentSupplierOrders(mosqueId, maxDays){
   for(let i=0;i<maxDays;i++){
     const rec = await loadRecord(mosqueId, cursor);
     if(rec.supplierOrderConfirmed || rec.orderCancelled){
-      orders.push({date: cursor, qty: rec.orderRequestedQty||0, deliveredQty: rec.supplierDeliveredQty||0, status: supplierOrderStatusLabel(rec), requestedTime: rec.orderRequestedTime||'', approvedTime: rec.orderApprovedTime||'', receivedTime: rec.supplierOrderReceivedTime||'', executedTime: rec.supplierExecutedTime||''});
+      orders.push({date: cursor, qty: rec.orderRequestedQty||0, qty330: rec.orderRequestedQty330||0, qty200: rec.orderRequestedQty200||0, deliveredQty: rec.supplierDeliveredQty||0, deliveredQty330: rec.supplierDeliveredQty330||0, deliveredQty200: rec.supplierDeliveredQty200||0, status: supplierOrderStatusLabel(rec), requestedTime: rec.orderRequestedTime||'', approvedTime: rec.orderApprovedTime||'', receivedTime: rec.supplierOrderReceivedTime||'', executedTime: rec.supplierExecutedTime||''});
     }
     cursor = addDays(cursor, -1);
   }
@@ -6635,7 +6818,9 @@ function supplierOrdersLogHTML(orders, L){
     ${orders.map(o=>{
       let statusCell = o.status;
       if((Number(o.deliveredQty)||0) > (Number(o.qty)||0)) statusCell += `<br><span style="color:var(--red);font-size:12px">تم توريد كمية أكثر من المطلوب</span>`;
-      return `<tr><td>${humanDateNoDay(o.date)}</td><td>${o.qty}</td><td>${o.deliveredQty}</td><td>${o.requestedTime?formatTime12(o.requestedTime):'—'}</td><td>${o.approvedTime?formatTime12(o.approvedTime):'—'}</td><td>${o.executedTime?formatTime12(o.executedTime):'—'}</td><td>${statusCell}</td></tr>`;
+      const qtyCell = qtyBreakdownHTML(o.qty, o.qty330, o.qty200);
+      const deliveredCell = qtyBreakdownHTML(o.deliveredQty, o.deliveredQty330, o.deliveredQty200);
+      return `<tr><td>${humanDateNoDay(o.date)}</td><td>${qtyCell}</td><td>${deliveredCell}</td><td>${o.requestedTime?formatTime12(o.requestedTime):'—'}</td><td>${o.approvedTime?formatTime12(o.approvedTime):'—'}</td><td>${o.executedTime?formatTime12(o.executedTime):'—'}</td><td>${statusCell}</td></tr>`;
     }).join('')}
   </table>`;
 }
@@ -6646,7 +6831,7 @@ async function getSupplierOrdersInRange(mosqueId, startDate, endDate){
   while(cursor <= endDate && guard < 31){
     const rec = await loadRecord(mosqueId, cursor);
     if(rec.supplierOrderConfirmed || rec.orderCancelled){
-      orders.push({date: cursor, qty: rec.orderRequestedQty||0, deliveredQty: rec.supplierDeliveredQty||0, status: supplierOrderStatusLabel(rec), requestedTime: rec.orderRequestedTime||'', approvedTime: rec.orderApprovedTime||'', receivedTime: rec.supplierOrderReceivedTime||'', executedTime: rec.supplierExecutedTime||'', saved: !!rec.supplierRecordSaved});
+      orders.push({date: cursor, qty: rec.orderRequestedQty||0, qty330: rec.orderRequestedQty330||0, qty200: rec.orderRequestedQty200||0, deliveredQty: rec.supplierDeliveredQty||0, deliveredQty330: rec.supplierDeliveredQty330||0, deliveredQty200: rec.supplierDeliveredQty200||0, status: supplierOrderStatusLabel(rec), requestedTime: rec.orderRequestedTime||'', approvedTime: rec.orderApprovedTime||'', receivedTime: rec.supplierOrderReceivedTime||'', executedTime: rec.supplierExecutedTime||'', saved: !!rec.supplierRecordSaved});
     }
     cursor = addDays(cursor, 1);
     guard++;
@@ -6679,8 +6864,8 @@ async function renderAdminSupplierLog(main){
       ${allOrders.length ? `<table class="kv-table">
         <tr><td><strong>الموقع</strong></td><td><strong>التاريخ</strong></td><td><strong>الكمية المطلوبة</strong></td><td><strong>الكمية التي نزلت</strong></td><td><strong>وقت الطلب</strong></td><td><strong>وقت استلام الطلب</strong></td><td><strong>وقت التسليم</strong></td><td><strong>حالة الطلب</strong></td></tr>
         ${allOrders.map(o=>{
-          const qtyCell = o.saved ? o.qty : `<span class="muted small">—</span>`;
-          const deliveredCell = o.saved ? o.deliveredQty : `<span class="muted small">بانتظار حفظ المورد</span>`;
+          const qtyCell = o.saved ? qtyBreakdownHTML(o.qty, o.qty330, o.qty200) : `<span class="muted small">—</span>`;
+          const deliveredCell = o.saved ? qtyBreakdownHTML(o.deliveredQty, o.deliveredQty330, o.deliveredQty200) : `<span class="muted small">بانتظار حفظ المورد</span>`;
           const requestedCell = o.requestedTime ? formatTime12(o.requestedTime) : '—';
           const receivedCell = o.receivedTime ? formatTime12(o.receivedTime) : '—';
           const executedCell = o.executedTime ? formatTime12(o.executedTime) : '—';
@@ -6785,7 +6970,7 @@ async function renderSupplierMain(){
             <span id="supStatus_${m.id}">${receivedBadge} ${cancelBtn}</span>
           </div>
           <table class="kv-table" style="margin-top:10px">
-            <tr><td>الكمية المطلوبة (كرتون)</td><td><span class="kv-readonly" id="supQty_${m.id}">${qty}</span></td></tr>
+            <tr><td>الكمية المطلوبة (كرتون)</td><td><span class="kv-readonly" id="supQty_${m.id}">${qtyBreakdownHTML(qty, rec.orderRequestedQty330, rec.orderRequestedQty200)}</span></td></tr>
             <tr><td>وقت الطلب</td><td><span class="kv-readonly">${rec.orderApprovedTime?formatTime12(rec.orderApprovedTime):'—'}</span></td></tr>
             ${rec.supplierOrderReceived ? `<tr><td>وقت الاستلام</td><td><span class="kv-readonly">${rec.supplierOrderReceivedTime?formatTime12(rec.supplierOrderReceivedTime):'—'}</span></td></tr>` : ''}
             <tr><td>موعد وصول المورد</td><td><span class="kv-readonly">${rec.supplierArrivalTime?formatTime12(rec.supplierArrivalTime):'—'}</span></td></tr>
@@ -6814,7 +6999,10 @@ async function renderSupplierMain(){
           ${!canDeliver ? `<p class="muted small" style="margin-top:8px">يجب الضغط على "تم استلام الطلب" أولاً لإدخال الكمية.</p>` : ''}
           <table class="kv-table" style="margin-top:10px">
             <tr><td>الكمية (كرتون)</td><td>
-              <input type="number" min="0" class="input" style="max-width:130px" data-sup-delivered="${m.id}" value="${rec.supplierDeliveredQty||0}" ${canDeliver?'':'disabled'}>
+              <span class="row gap-sm" style="align-items:center;flex-wrap:wrap">
+                <span class="muted small">330 مل</span><input type="number" min="0" class="input" style="max-width:100px" data-sup-delivered330="${m.id}" value="${rec.supplierDeliveredQty330||0}" ${canDeliver?'':'disabled'}>
+                <span class="muted small">200 مل</span><input type="number" min="0" class="input" style="max-width:100px" data-sup-delivered200="${m.id}" value="${rec.supplierDeliveredQty200||0}" ${canDeliver?'':'disabled'}>
+              </span>
               <button type="button" class="btn btn-ghost btn-sm" data-sup-reset-delivered="${m.id}" title="تصفير" ${canDeliver?'':'disabled'}>↺</button>
             </td></tr>
           </table>
@@ -6854,18 +7042,36 @@ async function renderSupplierMain(){
       renderSupplierMain();
     });
   });
-  Array.from(main.querySelectorAll('[data-sup-delivered]')).forEach(inp=>{
+  Array.from(main.querySelectorAll('[data-sup-delivered330]')).forEach(inp=>{
     inp.addEventListener('change', async ()=>{
-      const mosqueId = inp.dataset.supDelivered;
+      const mosqueId = inp.dataset.supDelivered330;
       const latest = await loadRecord(mosqueId, viewDate);
       if(!latest.supplierOrderReceived) return;
-      latest.supplierDeliveredQty = Number(inp.value)||0;
+      latest.supplierDeliveredQty330 = Number(inp.value)||0;
+      latest.supplierDeliveredQty200 = Number(main.querySelector(`[data-sup-delivered200="${mosqueId}"]`)?.value)||0;
+      latest.supplierDeliveredQty = latest.supplierDeliveredQty330 + latest.supplierDeliveredQty200;
       if(latest.supplierReceiptPhoto && latest.supplierDeliveredQty>0 && !latest.supplierExecutedTime) latest.supplierExecutedTime = nowTime12raw();
-      latest.supplierRecordSaved = false; // any edit after saving requires an explicit re-save before admin sees the new value
+      latest.supplierRecordSaved = false;
       await checkAndApplyShortfall(mosqueId, latest, viewDate);
       await storageSet(recKey(mosqueId, viewDate), JSON.stringify(latest));
       await bumpNotifSite(['supplier','supplierorder'], mosqueId);
-      renderSupplierMain();
+      rerenderUnlessTyping(renderSupplierMain);
+    });
+  });
+  Array.from(main.querySelectorAll('[data-sup-delivered200]')).forEach(inp=>{
+    inp.addEventListener('change', async ()=>{
+      const mosqueId = inp.dataset.supDelivered200;
+      const latest = await loadRecord(mosqueId, viewDate);
+      if(!latest.supplierOrderReceived) return;
+      latest.supplierDeliveredQty200 = Number(inp.value)||0;
+      latest.supplierDeliveredQty330 = Number(main.querySelector(`[data-sup-delivered330="${mosqueId}"]`)?.value)||0;
+      latest.supplierDeliveredQty = latest.supplierDeliveredQty330 + latest.supplierDeliveredQty200;
+      if(latest.supplierReceiptPhoto && latest.supplierDeliveredQty>0 && !latest.supplierExecutedTime) latest.supplierExecutedTime = nowTime12raw();
+      latest.supplierRecordSaved = false;
+      await checkAndApplyShortfall(mosqueId, latest, viewDate);
+      await storageSet(recKey(mosqueId, viewDate), JSON.stringify(latest));
+      await bumpNotifSite(['supplier','supplierorder'], mosqueId);
+      rerenderUnlessTyping(renderSupplierMain);
     });
   });
   Array.from(main.querySelectorAll('[data-sup-reset-delivered]')).forEach(b=>{
@@ -6874,6 +7080,8 @@ async function renderSupplierMain(){
       const latest = await loadRecord(mosqueId, viewDate);
       if(!latest.supplierOrderReceived) return;
       latest.supplierDeliveredQty = 0;
+      latest.supplierDeliveredQty330 = 0;
+      latest.supplierDeliveredQty200 = 0;
       latest.supplierExecutedTime = '';
       latest.supplierRecordSaved = false;
       await storageSet(recKey(mosqueId, viewDate), JSON.stringify(latest));
@@ -6939,7 +7147,7 @@ async function renderSupplierMain(){
     for(const m of sites){
       const latest = currentData[m.id];
       const qtyEl = document.getElementById(`supQty_${m.id}`);
-      if(qtyEl) qtyEl.textContent = latest.orderRequestedQty || 0;
+      if(qtyEl) qtyEl.textContent = qtyBreakdownHTML(latest.orderRequestedQty, latest.orderRequestedQty330, latest.orderRequestedQty200);
       const statusEl = document.getElementById(`supStatus_${m.id}`);
       if(statusEl){
         const receivedBadge = latest.supplierOrderReceived
@@ -6992,13 +7200,15 @@ async function renderWarehouseMain(){
   const byDriver = {};
   rec.supplyEntries.forEach(en=>{
     const k = en.driverId || '_none';
-    if(!byDriver[k]) byDriver[k] = {name: en.driverName||'بدون سائق', supply:0, ret:0};
-    byDriver[k].supply += Number(en.qty)||0;
+    if(!byDriver[k]) byDriver[k] = {name: en.driverName||'بدون سائق', supply330:0, supply200:0, ret330:0, ret200:0};
+    const size = en.bottleSize||'330';
+    byDriver[k]['supply'+size] += Number(en.qty)||0;
   });
   rec.returnEntries.forEach(en=>{
     const k = en.driverId || '_none';
-    if(!byDriver[k]) byDriver[k] = {name: en.driverName||'بدون سائق', supply:0, ret:0};
-    byDriver[k].ret += Number(en.qty)||0;
+    if(!byDriver[k]) byDriver[k] = {name: en.driverName||'بدون سائق', supply330:0, supply200:0, ret330:0, ret200:0};
+    const size = en.bottleSize||'330';
+    byDriver[k]['ret'+size] += Number(en.qty)||0;
   });
   main.innerHTML = `
     <h2 style="margin:0">${state.roleLabels.warehouse}</h2>
@@ -7010,6 +7220,10 @@ async function renderWarehouseMain(){
         ${L.supplyDriver.visible!==false ? `
         <select class="input" id="whNewSupplyDriver" style="max-width:200px">${driverOptionsHTML}</select>` : ''}
         <input type="number" min="0" class="input" style="max-width:130px" id="whNewSupplyQty" placeholder="${L.supplyQty.label}">
+        <select class="input" id="whNewSupplySize" style="max-width:110px" title="حجم العبوة">
+          <option value="330">330 مل</option>
+          <option value="200">200 مل</option>
+        </select>
         <button type="button" class="btn btn-primary btn-sm" id="whAddSupplyBtn">+ إضافة</button>
       </div>` : ''}
       ${L.returnSection.visible!==false ? `
@@ -7017,34 +7231,54 @@ async function renderWarehouseMain(){
       <div class="row gap-sm" style="align-items:center;flex-wrap:wrap">
         <select class="input" id="whNewReturnDriver" style="max-width:200px">${driverOptionsHTML}</select>
         <input type="number" min="0" class="input" style="max-width:130px" id="whNewReturnQty" placeholder="${L.returnQty.label}">
+        <select class="input" id="whNewReturnSize" style="max-width:110px" title="حجم العبوة">
+          <option value="330">330 مل</option>
+          <option value="200">200 مل</option>
+        </select>
         <button type="button" class="btn btn-primary btn-sm" id="whAddReturnBtn">+ إضافة</button>
       </div>` : ''}
       <table class="kv-table" style="margin-top:18px">
-        <tr><td><strong>السائق</strong></td><td><strong>${L.supplySection.label}</strong></td><td><strong>${L.returnSection.label}</strong></td></tr>
+        <tr><td><strong>السائق</strong></td><td><strong>${L.supplySection.label} — 330مل</strong></td><td><strong>${L.supplySection.label} — 200مل</strong></td><td><strong>${L.returnSection.label} — 330مل</strong></td><td><strong>${L.returnSection.label} — 200مل</strong></td></tr>
         ${Object.entries(byDriver).length ? Object.entries(byDriver).map(([driverId,d])=>`
         <tr>
           <td>${d.name}</td>
           <td>
             <span class="row gap-sm" style="align-items:center">
-              <input type="number" min="0" class="input" style="width:80px;color:var(--green);font-weight:700" data-wh-edit-supply="${driverId}" value="${d.supply}">
-              <button type="button" class="icon-btn" title="حذف" data-wh-del-supply="${driverId}">✕</button>
+              <input type="number" min="0" class="input" style="width:70px;color:var(--green);font-weight:700" data-wh-edit-supply330="${driverId}" value="${d.supply330}">
+              <button type="button" class="icon-btn" title="حذف" data-wh-del-supply330="${driverId}">✕</button>
             </span>
           </td>
           <td>
             <span class="row gap-sm" style="align-items:center">
-              <input type="number" min="0" class="input" style="width:80px;color:var(--red);font-weight:700" data-wh-edit-return="${driverId}" value="${d.ret}">
-              <button type="button" class="icon-btn" title="حذف" data-wh-del-return="${driverId}">✕</button>
+              <input type="number" min="0" class="input" style="width:70px;color:var(--green);font-weight:700" data-wh-edit-supply200="${driverId}" value="${d.supply200}">
+              <button type="button" class="icon-btn" title="حذف" data-wh-del-supply200="${driverId}">✕</button>
             </span>
           </td>
-        </tr>`).join('') : `<tr><td colspan="3" class="muted small">لا توجد كميات مسجّلة اليوم بعد.</td></tr>`}
+          <td>
+            <span class="row gap-sm" style="align-items:center">
+              <input type="number" min="0" class="input" style="width:70px;color:var(--red);font-weight:700" data-wh-edit-return330="${driverId}" value="${d.ret330}">
+              <button type="button" class="icon-btn" title="حذف" data-wh-del-return330="${driverId}">✕</button>
+            </span>
+          </td>
+          <td>
+            <span class="row gap-sm" style="align-items:center">
+              <input type="number" min="0" class="input" style="width:70px;color:var(--red);font-weight:700" data-wh-edit-return200="${driverId}" value="${d.ret200}">
+              <button type="button" class="icon-btn" title="حذف" data-wh-del-return200="${driverId}">✕</button>
+            </span>
+          </td>
+        </tr>`).join('') : `<tr><td colspan="5" class="muted small">لا توجد كميات مسجّلة اليوم بعد.</td></tr>`}
       </table>
     </div>
     ${L.totalDistributed.visible!==false ? `
     <div class="card" style="margin-top:16px">
       <table class="kv-table">
-        <tr><td>${L.supplySection.label}</td><td><span class="kv-readonly" style="color:var(--green);font-weight:700">${rec.supplyEntries.reduce((s,en)=>s+(Number(en.qty)||0),0)}+</span></td></tr>
-        <tr><td>${L.returnSection.label}</td><td><span class="kv-readonly" style="color:var(--red);font-weight:700">${rec.returnEntries.reduce((s,en)=>s+(Number(en.qty)||0),0)}-</span></td></tr>
-        <tr><td>${L.totalDistributed.label}</td><td><span class="kv-readonly" style="font-weight:800">${rec.supplyEntries.reduce((s,en)=>s+(Number(en.qty)||0),0) - rec.returnEntries.reduce((s,en)=>s+(Number(en.qty)||0),0)}</span></td></tr>
+        <tr><td>${L.supplySection.label}</td><td>${qtyBreakdownHTML(rec.supplyEntries.reduce((s,en)=>s+(Number(en.qty)||0),0), rec.supplyEntries.filter(en=>(en.bottleSize||'330')==='330').reduce((s,en)=>s+(Number(en.qty)||0),0), rec.supplyEntries.filter(en=>(en.bottleSize||'330')==='200').reduce((s,en)=>s+(Number(en.qty)||0),0))}</td></tr>
+        <tr><td>${L.returnSection.label}</td><td>${qtyBreakdownHTML(rec.returnEntries.reduce((s,en)=>s+(Number(en.qty)||0),0), rec.returnEntries.filter(en=>(en.bottleSize||'330')==='330').reduce((s,en)=>s+(Number(en.qty)||0),0), rec.returnEntries.filter(en=>(en.bottleSize||'330')==='200').reduce((s,en)=>s+(Number(en.qty)||0),0))}</td></tr>
+        <tr><td>${L.totalDistributed.label}</td><td>${qtyBreakdownHTML(
+          rec.supplyEntries.reduce((s,en)=>s+(Number(en.qty)||0),0) - rec.returnEntries.reduce((s,en)=>s+(Number(en.qty)||0),0),
+          rec.supplyEntries.filter(en=>(en.bottleSize||'330')==='330').reduce((s,en)=>s+(Number(en.qty)||0),0) - rec.returnEntries.filter(en=>(en.bottleSize||'330')==='330').reduce((s,en)=>s+(Number(en.qty)||0),0),
+          rec.supplyEntries.filter(en=>(en.bottleSize||'330')==='200').reduce((s,en)=>s+(Number(en.qty)||0),0) - rec.returnEntries.filter(en=>(en.bottleSize||'330')==='200').reduce((s,en)=>s+(Number(en.qty)||0),0)
+        )}</td></tr>
       </table>
     </div>` : ''}
   `;
@@ -7052,12 +7286,14 @@ async function renderWarehouseMain(){
   if(addSupplyBtn) addSupplyBtn.addEventListener('click', async ()=>{
     const driverSel = document.getElementById('whNewSupplyDriver');
     const qtyEl = document.getElementById('whNewSupplyQty');
+    const sizeEl = document.getElementById('whNewSupplySize');
     const qty = Number(qtyEl.value)||0;
     if(!qty){ toast('أدخل الكمية','err'); return; }
     const driverId = driverSel ? driverSel.value : '';
+    const bottleSize = sizeEl ? sizeEl.value : '330';
     const chosen = state.users.find(u=>u.id===driverId);
     const latest = await loadWarehouseRecord(state.today);
-    latest.supplyEntries.push({id:'wsup_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), driverId, driverName: chosen?chosen.name:'', qty, time: nowTime12raw(), photo:null});
+    latest.supplyEntries.push({id:'wsup_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), driverId, driverName: chosen?chosen.name:'', qty, bottleSize, time: nowTime12raw(), photo:null});
     await saveWarehouseRecord(state.today, latest);
     if(driverId) await bumpNotifSite(['warehouseadmin','driveradmin'], driverId);
     toast('تمت الإضافة');
@@ -7067,75 +7303,64 @@ async function renderWarehouseMain(){
   if(addReturnBtn) addReturnBtn.addEventListener('click', async ()=>{
     const driverSel = document.getElementById('whNewReturnDriver');
     const qtyEl = document.getElementById('whNewReturnQty');
+    const sizeEl = document.getElementById('whNewReturnSize');
     const qty = Number(qtyEl.value)||0;
     if(!qty){ toast('أدخل الكمية','err'); return; }
     const driverId = driverSel ? driverSel.value : '';
+    const bottleSize = sizeEl ? sizeEl.value : '330';
     const chosen = state.users.find(u=>u.id===driverId);
     const latest = await loadWarehouseRecord(state.today);
-    latest.returnEntries.push({id:'wret_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), driverId, driverName: chosen?chosen.name:'', qty, time: nowTime12raw(), photo:null});
+    latest.returnEntries.push({id:'wret_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), driverId, driverName: chosen?chosen.name:'', qty, bottleSize, time: nowTime12raw(), photo:null});
     await saveWarehouseRecord(state.today, latest);
     if(driverId) await bumpNotifSite(['warehouseadmin','driveradmin'], driverId);
     toast('تمت الإضافة');
     renderWarehouseMain();
   });
-  Array.from(main.querySelectorAll('[data-wh-edit-supply]')).forEach(inp=>{
-    inp.addEventListener('change', async ()=>{
-      const driverId = inp.dataset.whEditSupply;
-      const newQty = Number(inp.value)||0;
-      const latest = await loadWarehouseRecord(state.today);
-      const others = latest.supplyEntries.filter(en=>(en.driverId||'_none')!==driverId);
-      const mine = latest.supplyEntries.filter(en=>(en.driverId||'_none')===driverId);
-      if(newQty<=0){ latest.supplyEntries = others; }
-      else {
-        const driverName = mine[0] ? mine[0].driverName : (state.users.find(u=>u.id===driverId)||{}).name || '';
-        latest.supplyEntries = others.concat([{id:'wsup_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), driverId: driverId==='_none'?'':driverId, driverName, qty:newQty, time: nowTime12raw(), photo:null}]);
-      }
-      await saveWarehouseRecord(state.today, latest);
-      if(driverId && driverId!=='_none') await bumpNotifSite(['warehouseadmin','driveradmin'], driverId);
-      toast('تم الحفظ');
-      renderWarehouseMain();
+  function wireWhSizeEdit(attr, listKey, size){
+    Array.from(main.querySelectorAll(`[data-wh-edit-${listKey}${size}]`)).forEach(inp=>{
+      inp.addEventListener('change', async ()=>{
+        const driverId = inp.dataset[attr];
+        const newQty = Number(inp.value)||0;
+        const latest = await loadWarehouseRecord(state.today);
+        const listName = listKey==='supply' ? 'supplyEntries' : 'returnEntries';
+        const others = latest[listName].filter(en=>!((en.driverId||'_none')===driverId && (en.bottleSize||'330')===size));
+        const mine = latest[listName].filter(en=>(en.driverId||'_none')===driverId && (en.bottleSize||'330')===size);
+        if(newQty<=0){ latest[listName] = others; }
+        else {
+          const driverName = mine[0] ? mine[0].driverName : (state.users.find(u=>u.id===driverId)||{}).name || '';
+          const prefix = listKey==='supply' ? 'wsup_' : 'wret_';
+          others.push({id:prefix+Date.now()+'_'+Math.random().toString(36).slice(2,7), driverId: driverId==='_none'?'':driverId, driverName, qty:newQty, bottleSize:size, time: nowTime12raw(), photo:null});
+          latest[listName] = others;
+        }
+        await saveWarehouseRecord(state.today, latest);
+        if(driverId && driverId!=='_none') await bumpNotifSite(['warehouseadmin','driveradmin'], driverId);
+        toast('تم الحفظ');
+        rerenderUnlessTyping(renderWarehouseMain);
+      });
     });
-  });
-  Array.from(main.querySelectorAll('[data-wh-edit-return]')).forEach(inp=>{
-    inp.addEventListener('change', async ()=>{
-      const driverId = inp.dataset.whEditReturn;
-      const newQty = Number(inp.value)||0;
-      const latest = await loadWarehouseRecord(state.today);
-      const others = latest.returnEntries.filter(en=>(en.driverId||'_none')!==driverId);
-      const mine = latest.returnEntries.filter(en=>(en.driverId||'_none')===driverId);
-      if(newQty<=0){ latest.returnEntries = others; }
-      else {
-        const driverName = mine[0] ? mine[0].driverName : (state.users.find(u=>u.id===driverId)||{}).name || '';
-        latest.returnEntries = others.concat([{id:'wret_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), driverId: driverId==='_none'?'':driverId, driverName, qty:newQty, time: nowTime12raw(), photo:null}]);
-      }
-      await saveWarehouseRecord(state.today, latest);
-      if(driverId && driverId!=='_none') await bumpNotifSite(['warehouseadmin','driveradmin'], driverId);
-      toast('تم الحفظ');
-      renderWarehouseMain();
+  }
+  wireWhSizeEdit('whEditSupply330','supply','330');
+  wireWhSizeEdit('whEditSupply200','supply','200');
+  wireWhSizeEdit('whEditReturn330','return','330');
+  wireWhSizeEdit('whEditReturn200','return','200');
+  function wireWhSizeDel(attr, listKey, size){
+    Array.from(main.querySelectorAll(`[data-wh-del-${listKey}${size}]`)).forEach(b=>{
+      b.addEventListener('click', async ()=>{
+        const driverId = b.dataset[attr];
+        const latest = await loadWarehouseRecord(state.today);
+        const listName = listKey==='supply' ? 'supplyEntries' : 'returnEntries';
+        latest[listName] = latest[listName].filter(en=>!((en.driverId||'_none')===driverId && (en.bottleSize||'330')===size));
+        await saveWarehouseRecord(state.today, latest);
+        if(driverId && driverId!=='_none') await bumpNotifSite(['warehouseadmin','driveradmin'], driverId);
+        toast('تم الحذف');
+        renderWarehouseMain();
+      });
     });
-  });
-  Array.from(main.querySelectorAll('[data-wh-del-supply]')).forEach(b=>{
-    b.addEventListener('click', async ()=>{
-      const driverId = b.dataset.whDelSupply;
-      const latest = await loadWarehouseRecord(state.today);
-      latest.supplyEntries = latest.supplyEntries.filter(en=>(en.driverId||'_none')!==driverId);
-      await saveWarehouseRecord(state.today, latest);
-      if(driverId && driverId!=='_none') await bumpNotifSite(['warehouseadmin','driveradmin'], driverId);
-      toast('تم الحذف');
-      renderWarehouseMain();
-    });
-  });
-  Array.from(main.querySelectorAll('[data-wh-del-return]')).forEach(b=>{
-    b.addEventListener('click', async ()=>{
-      const driverId = b.dataset.whDelReturn;
-      const latest = await loadWarehouseRecord(state.today);
-      latest.returnEntries = latest.returnEntries.filter(en=>(en.driverId||'_none')!==driverId);
-      await saveWarehouseRecord(state.today, latest);
-      if(driverId && driverId!=='_none') await bumpNotifSite(['warehouseadmin','driveradmin'], driverId);
-      toast('تم الحذف');
-      renderWarehouseMain();
-    });
-  });
+  }
+  wireWhSizeDel('whDelSupply330','supply','330');
+  wireWhSizeDel('whDelSupply200','supply','200');
+  wireWhSizeDel('whDelReturn330','return','330');
+  wireWhSizeDel('whDelReturn200','return','200');
 }
 
 /* ============ DRIVER (سائق ناقلات الماء) ============ */
@@ -7176,14 +7401,17 @@ async function renderDriverMain(){
     <div class="card" style="margin-top:16px">
       <table class="kv-table">
         ${L.receivedQty.visible!==false ? `<tr><td>${L.receivedQty.label}</td><td>
-          <input type="number" min="0" class="input" style="max-width:130px" id="drvReceivedQty" value="${summary.receivedQty||0}">
+          <span class="row gap-sm" style="align-items:center;flex-wrap:wrap">
+            <span class="muted small">330 مل</span><input type="number" min="0" class="input" style="max-width:100px" id="drvReceivedQty330" value="${summary.receivedQty330||0}">
+            <span class="muted small">200 مل</span><input type="number" min="0" class="input" style="max-width:100px" id="drvReceivedQty200" value="${summary.receivedQty200||0}">
+          </span>
         </td></tr>` : ''}
         ${L.remainingQty.visible!==false ? `<tr><td>${L.remainingQty.label}</td><td><span class="kv-readonly" style="font-weight:800">${remaining}</span></td></tr>` : ''}
       </table>
       <table class="kv-table" style="margin-top:10px">
         ${sites.map(m=>{
           const r = recs[m.id];
-          return `<tr><td>${m.name}</td><td>${L.deliveredQty.label}: <strong>${r.deliveredQty||0}</strong></td><td>${L.returnQty.label}: <strong>${r.returnQty||0}</strong></td></tr>`;
+          return `<tr><td>${m.name}</td><td>${L.deliveredQty.label}: ${qtyBreakdownHTML(r.deliveredQty, r.deliveredQty330, r.deliveredQty200)}</td><td>${L.returnQty.label}: ${qtyBreakdownHTML(r.returnQty, r.returnQty330, r.returnQty200)}</td></tr>`;
         }).join('') || `<tr><td class="muted small">لا توجد مواقع نشطة.</td></tr>`}
       </table>
     </div>
@@ -7200,12 +7428,18 @@ async function renderDriverMain(){
           </div>
           <table class="kv-table" style="margin-top:10px">
             ${L.deliveredQty.visible!==false ? `<tr><td>${L.deliveredQty.label}</td><td>
-              <input type="number" min="0" class="input" style="max-width:130px" data-drv-delivered="${m.id}" value="${r.deliveredQty||0}" ${r.notVisited?'disabled':''}>
+              <span class="row gap-sm" style="align-items:center;flex-wrap:wrap">
+                <span class="muted small">330 مل</span><input type="number" min="0" class="input" style="max-width:100px" data-drv-delivered330="${m.id}" value="${r.deliveredQty330||0}" ${r.notVisited?'disabled':''}>
+                <span class="muted small">200 مل</span><input type="number" min="0" class="input" style="max-width:100px" data-drv-delivered200="${m.id}" value="${r.deliveredQty200||0}" ${r.notVisited?'disabled':''}>
+              </span>
               <button type="button" class="btn btn-ghost btn-sm" data-drv-reset-delivered="${m.id}" title="تصفير">↺</button>
             </td></tr>` : ''}
             ${L.deliveredTime.visible!==false ? `<tr><td>${L.deliveredTime.label}</td><td><span class="kv-readonly">${r.deliveredTime?formatTime12(r.deliveredTime):'—'}</span></td></tr>` : ''}
             ${L.returnQty.visible!==false ? `<tr><td>${L.returnQty.label}</td><td>
-              <input type="number" min="0" class="input" style="max-width:130px" data-drv-return="${m.id}" value="${r.returnQty||0}" ${r.notVisited?'disabled':''}>
+              <span class="row gap-sm" style="align-items:center;flex-wrap:wrap">
+                <span class="muted small">330 مل</span><input type="number" min="0" class="input" style="max-width:100px" data-drv-return330="${m.id}" value="${r.returnQty330||0}" ${r.notVisited?'disabled':''}>
+                <span class="muted small">200 مل</span><input type="number" min="0" class="input" style="max-width:100px" data-drv-return200="${m.id}" value="${r.returnQty200||0}" ${r.notVisited?'disabled':''}>
+              </span>
               <button type="button" class="btn btn-ghost btn-sm" data-drv-reset-return="${m.id}" title="تصفير">↺</button>
             </td></tr>` : ''}
             ${L.returnTime.visible!==false ? `<tr><td>${L.returnTime.label}</td><td><span class="kv-readonly">${r.returnTime?formatTime12(r.returnTime):'—'}</span></td></tr>` : ''}
@@ -7231,14 +7465,27 @@ async function renderDriverMain(){
   if(nextBtn) nextBtn.addEventListener('click', ()=>{ if(!isToday){ state.driverViewDate = addDays(viewDate, 1); renderDriverMain(); } });
   const jumpBtn = document.getElementById('drvJumpTodayBtn');
   if(jumpBtn) jumpBtn.addEventListener('click', ()=>{ state.driverViewDate = state.today; renderDriverMain(); });
-  const receivedQtyEl = document.getElementById('drvReceivedQty');
-  if(receivedQtyEl) receivedQtyEl.addEventListener('change', async e=>{
+  const receivedQty330El = document.getElementById('drvReceivedQty330');
+  if(receivedQty330El) receivedQty330El.addEventListener('change', async e=>{
     const latest = await loadDriverSummary(state.currentUser.id, viewDate);
-    latest.receivedQty = Number(e.target.value)||0;
+    latest.receivedQty330 = Number(e.target.value)||0;
+    latest.receivedQty200 = Number(document.getElementById('drvReceivedQty200')?.value)||0;
+    latest.receivedQty = latest.receivedQty330 + latest.receivedQty200;
     latest.receivedTime = nowTime12raw();
     await saveDriverSummary(state.currentUser.id, viewDate, latest);
     await bumpNotifSite(['driveradmin'], state.currentUser.id);
-    renderDriverMain();
+    rerenderUnlessTyping(renderDriverMain);
+  });
+  const receivedQty200El = document.getElementById('drvReceivedQty200');
+  if(receivedQty200El) receivedQty200El.addEventListener('change', async e=>{
+    const latest = await loadDriverSummary(state.currentUser.id, viewDate);
+    latest.receivedQty200 = Number(e.target.value)||0;
+    latest.receivedQty330 = Number(document.getElementById('drvReceivedQty330')?.value)||0;
+    latest.receivedQty = latest.receivedQty330 + latest.receivedQty200;
+    latest.receivedTime = nowTime12raw();
+    await saveDriverSummary(state.currentUser.id, viewDate, latest);
+    await bumpNotifSite(['driveradmin'], state.currentUser.id);
+    rerenderUnlessTyping(renderDriverMain);
   });
   Array.from(main.querySelectorAll('[data-drv-skip]')).forEach(b=>{
     b.addEventListener('click', async ()=>{
@@ -7260,28 +7507,60 @@ async function renderDriverMain(){
       renderDriverMain();
     });
   });
-  Array.from(main.querySelectorAll('[data-drv-delivered]')).forEach(inp=>{
+  Array.from(main.querySelectorAll('[data-drv-delivered330]')).forEach(inp=>{
     inp.addEventListener('change', async ()=>{
-      const mosqueId = inp.dataset.drvDelivered;
+      const mosqueId = inp.dataset.drvDelivered330;
       const latest = await loadDriverRecord(state.currentUser.id, mosqueId, viewDate);
       if(latest.notVisited) return;
-      latest.deliveredQty = Number(inp.value)||0;
+      latest.deliveredQty330 = Number(inp.value)||0;
+      latest.deliveredQty200 = Number(main.querySelector(`[data-drv-delivered200="${mosqueId}"]`)?.value)||0;
+      latest.deliveredQty = latest.deliveredQty330 + latest.deliveredQty200;
       latest.deliveredTime = nowTime12raw();
       await saveDriverRecord(state.currentUser.id, mosqueId, viewDate, latest);
       await bumpNotifSite(['driveradmin'], state.currentUser.id);
-      renderDriverMain();
+      rerenderUnlessTyping(renderDriverMain);
     });
   });
-  Array.from(main.querySelectorAll('[data-drv-return]')).forEach(inp=>{
+  Array.from(main.querySelectorAll('[data-drv-delivered200]')).forEach(inp=>{
     inp.addEventListener('change', async ()=>{
-      const mosqueId = inp.dataset.drvReturn;
+      const mosqueId = inp.dataset.drvDelivered200;
       const latest = await loadDriverRecord(state.currentUser.id, mosqueId, viewDate);
       if(latest.notVisited) return;
-      latest.returnQty = Number(inp.value)||0;
+      latest.deliveredQty200 = Number(inp.value)||0;
+      latest.deliveredQty330 = Number(main.querySelector(`[data-drv-delivered330="${mosqueId}"]`)?.value)||0;
+      latest.deliveredQty = latest.deliveredQty330 + latest.deliveredQty200;
+      latest.deliveredTime = nowTime12raw();
+      await saveDriverRecord(state.currentUser.id, mosqueId, viewDate, latest);
+      await bumpNotifSite(['driveradmin'], state.currentUser.id);
+      rerenderUnlessTyping(renderDriverMain);
+    });
+  });
+  Array.from(main.querySelectorAll('[data-drv-return330]')).forEach(inp=>{
+    inp.addEventListener('change', async ()=>{
+      const mosqueId = inp.dataset.drvReturn330;
+      const latest = await loadDriverRecord(state.currentUser.id, mosqueId, viewDate);
+      if(latest.notVisited) return;
+      latest.returnQty330 = Number(inp.value)||0;
+      latest.returnQty200 = Number(main.querySelector(`[data-drv-return200="${mosqueId}"]`)?.value)||0;
+      latest.returnQty = latest.returnQty330 + latest.returnQty200;
       latest.returnTime = nowTime12raw();
       await saveDriverRecord(state.currentUser.id, mosqueId, viewDate, latest);
       await bumpNotifSite(['driveradmin'], state.currentUser.id);
-      renderDriverMain();
+      rerenderUnlessTyping(renderDriverMain);
+    });
+  });
+  Array.from(main.querySelectorAll('[data-drv-return200]')).forEach(inp=>{
+    inp.addEventListener('change', async ()=>{
+      const mosqueId = inp.dataset.drvReturn200;
+      const latest = await loadDriverRecord(state.currentUser.id, mosqueId, viewDate);
+      if(latest.notVisited) return;
+      latest.returnQty200 = Number(inp.value)||0;
+      latest.returnQty330 = Number(main.querySelector(`[data-drv-return330="${mosqueId}"]`)?.value)||0;
+      latest.returnQty = latest.returnQty330 + latest.returnQty200;
+      latest.returnTime = nowTime12raw();
+      await saveDriverRecord(state.currentUser.id, mosqueId, viewDate, latest);
+      await bumpNotifSite(['driveradmin'], state.currentUser.id);
+      rerenderUnlessTyping(renderDriverMain);
     });
   });
   Array.from(main.querySelectorAll('[data-drv-reset-delivered]')).forEach(b=>{
@@ -7289,6 +7568,8 @@ async function renderDriverMain(){
       const mosqueId = b.dataset.drvResetDelivered;
       const latest = await loadDriverRecord(state.currentUser.id, mosqueId, viewDate);
       latest.deliveredQty = 0;
+      latest.deliveredQty330 = 0;
+      latest.deliveredQty200 = 0;
       latest.deliveredTime = '';
       await saveDriverRecord(state.currentUser.id, mosqueId, viewDate, latest);
       await bumpNotifSite(['driveradmin'], state.currentUser.id);
@@ -7300,6 +7581,8 @@ async function renderDriverMain(){
       const mosqueId = b.dataset.drvResetReturn;
       const latest = await loadDriverRecord(state.currentUser.id, mosqueId, viewDate);
       latest.returnQty = 0;
+      latest.returnQty330 = 0;
+      latest.returnQty200 = 0;
       latest.returnTime = '';
       await saveDriverRecord(state.currentUser.id, mosqueId, viewDate, latest);
       await bumpNotifSite(['driveradmin'], state.currentUser.id);
@@ -7353,22 +7636,26 @@ async function renderWarehouseViewPage(main){
       ${L.supplySection.visible!==false ? `<h3 style="margin-top:0">${L.supplySection.label}</h3>` : ''}
       ${L.returnSection.visible!==false ? `<h3 style="margin-top:0">${L.returnSection.label}</h3>` : ''}
       <table class="kv-table" style="margin-top:10px">
-        <tr><td><strong>السائق</strong></td><td><strong>${L.supplySection.label}</strong></td><td><strong>${L.returnSection.label}</strong></td></tr>
+        <tr><td><strong>السائق</strong></td><td><strong>${L.supplySection.label} — 330مل</strong></td><td><strong>${L.supplySection.label} — 200مل</strong></td><td><strong>${L.returnSection.label} — 330مل</strong></td><td><strong>${L.returnSection.label} — 200مل</strong></td></tr>
         ${(()=>{
           const byDriver = {};
-          rec.supplyEntries.forEach(en=>{ const k=en.driverId||'_none'; if(!byDriver[k]) byDriver[k]={name:en.driverName||'بدون سائق',supply:0,ret:0}; byDriver[k].supply += Number(en.qty)||0; });
-          rec.returnEntries.forEach(en=>{ const k=en.driverId||'_none'; if(!byDriver[k]) byDriver[k]={name:en.driverName||'بدون سائق',supply:0,ret:0}; byDriver[k].ret += Number(en.qty)||0; });
+          rec.supplyEntries.forEach(en=>{ const k=en.driverId||'_none'; if(!byDriver[k]) byDriver[k]={name:en.driverName||'بدون سائق',supply330:0,supply200:0,ret330:0,ret200:0}; byDriver[k]['supply'+(en.bottleSize||'330')] += Number(en.qty)||0; });
+          rec.returnEntries.forEach(en=>{ const k=en.driverId||'_none'; if(!byDriver[k]) byDriver[k]={name:en.driverName||'بدون سائق',supply330:0,supply200:0,ret330:0,ret200:0}; byDriver[k]['ret'+(en.bottleSize||'330')] += Number(en.qty)||0; });
           const rows = Object.values(byDriver);
-          return rows.length ? rows.map(d=>`<tr><td>${d.name}</td><td><span style="color:var(--green);font-weight:700">${d.supply}+</span></td><td><span style="color:var(--red);font-weight:700">${d.ret}-</span></td></tr>`).join('') : `<tr><td colspan="3" class="muted small">لا توجد كميات مسجّلة.</td></tr>`;
+          return rows.length ? rows.map(d=>`<tr><td>${d.name}</td><td><span style="color:var(--green);font-weight:700">${d.supply330}+</span></td><td><span style="color:var(--green);font-weight:700">${d.supply200}+</span></td><td><span style="color:var(--red);font-weight:700">${d.ret330}-</span></td><td><span style="color:var(--red);font-weight:700">${d.ret200}-</span></td></tr>`).join('') : `<tr><td colspan="5" class="muted small">لا توجد كميات مسجّلة.</td></tr>`;
         })()}
       </table>
     </div>` : ''}
     ${L.totalDistributed.visible!==false ? `
     <div class="card" style="max-width:480px;margin-top:16px">
       <table class="kv-table">
-        <tr><td>${L.supplySection.label}</td><td><span class="kv-readonly" style="color:var(--green);font-weight:700">${rec.supplyEntries.reduce((s,en)=>s+(Number(en.qty)||0),0)}+</span></td></tr>
-        <tr><td>${L.returnSection.label}</td><td><span class="kv-readonly" style="color:var(--red);font-weight:700">${rec.returnEntries.reduce((s,en)=>s+(Number(en.qty)||0),0)}-</span></td></tr>
-        <tr><td>${L.totalDistributed.label}</td><td><span class="kv-readonly" style="font-weight:800">${rec.supplyEntries.reduce((s,en)=>s+(Number(en.qty)||0),0) - rec.returnEntries.reduce((s,en)=>s+(Number(en.qty)||0),0)}</span></td></tr>
+        <tr><td>${L.supplySection.label}</td><td>${qtyBreakdownHTML(rec.supplyEntries.reduce((s,en)=>s+(Number(en.qty)||0),0), rec.supplyEntries.filter(en=>(en.bottleSize||'330')==='330').reduce((s,en)=>s+(Number(en.qty)||0),0), rec.supplyEntries.filter(en=>(en.bottleSize||'330')==='200').reduce((s,en)=>s+(Number(en.qty)||0),0))}</td></tr>
+        <tr><td>${L.returnSection.label}</td><td>${qtyBreakdownHTML(rec.returnEntries.reduce((s,en)=>s+(Number(en.qty)||0),0), rec.returnEntries.filter(en=>(en.bottleSize||'330')==='330').reduce((s,en)=>s+(Number(en.qty)||0),0), rec.returnEntries.filter(en=>(en.bottleSize||'330')==='200').reduce((s,en)=>s+(Number(en.qty)||0),0))}</td></tr>
+        <tr><td>${L.totalDistributed.label}</td><td>${qtyBreakdownHTML(
+          rec.supplyEntries.reduce((s,en)=>s+(Number(en.qty)||0),0) - rec.returnEntries.reduce((s,en)=>s+(Number(en.qty)||0),0),
+          rec.supplyEntries.filter(en=>(en.bottleSize||'330')==='330').reduce((s,en)=>s+(Number(en.qty)||0),0) - rec.returnEntries.filter(en=>(en.bottleSize||'330')==='330').reduce((s,en)=>s+(Number(en.qty)||0),0),
+          rec.supplyEntries.filter(en=>(en.bottleSize||'330')==='200').reduce((s,en)=>s+(Number(en.qty)||0),0) - rec.returnEntries.filter(en=>(en.bottleSize||'330')==='200').reduce((s,en)=>s+(Number(en.qty)||0),0)
+        )}</td></tr>
       </table>
     </div>` : ''}
   `;
@@ -7437,6 +7724,10 @@ async function renderDriverViewPage(main){
     for(const d of drivers){ totalsByDriver[d.id] = await computeDriverDayTotals(d.id, listDate); }
     const grandSupplied = drivers.reduce((s,d)=>s+totalsByDriver[d.id].supplied,0);
     const grandReturned = drivers.reduce((s,d)=>s+totalsByDriver[d.id].returned,0);
+    const grandSupplied330 = drivers.reduce((s,d)=>s+(totalsByDriver[d.id].supplied330||0),0);
+    const grandSupplied200 = drivers.reduce((s,d)=>s+(totalsByDriver[d.id].supplied200||0),0);
+    const grandReturned330 = drivers.reduce((s,d)=>s+(totalsByDriver[d.id].returned330||0),0);
+    const grandReturned200 = drivers.reduce((s,d)=>s+(totalsByDriver[d.id].returned200||0),0);
     main.innerHTML = `
       <h2 style="margin:0">${state.roleLabels.driver}</h2>
       <p class="muted small">اختر أي سائق لعرض بياناته الخاصة — معاينة فقط، التعديل من معلومات خاصة ← ${state.roleLabels.driver}.</p>
@@ -7448,8 +7739,8 @@ async function renderDriverViewPage(main){
       </div>
       <div class="card" style="max-width:480px;margin-bottom:14px">
         <table class="kv-table">
-          <tr><td>إجمالي الكمية الموردة (الجميع)</td><td><span class="kv-readonly" style="color:var(--green);font-weight:800">${grandSupplied}+</span></td></tr>
-          <tr><td>إجمالي الرجيع (الجميع)</td><td><span class="kv-readonly" style="color:var(--red);font-weight:800">${grandReturned}-</span></td></tr>
+          <tr><td>إجمالي الكمية الموردة (الجميع)</td><td>${qtyBreakdownHTML(grandSupplied, grandSupplied330, grandSupplied200)}</td></tr>
+          <tr><td>إجمالي الرجيع (الجميع)</td><td>${qtyBreakdownHTML(grandReturned, grandReturned330, grandReturned200)}</td></tr>
         </table>
       </div>
       <div class="col gap-sm" style="max-width:480px">
@@ -7458,9 +7749,9 @@ async function renderDriverViewPage(main){
           return `
           <button type="button" class="btn btn-ghost" style="justify-content:space-between;text-align:right;padding:14px 16px" data-drv-pick="${d.id}">
             <span>${d.name}${unread>0 ? ` <span class="notif-badge" style="position:static;display:inline-block">${unread>99?'99+':unread}</span>` : ''}</span>
-            <span class="row gap-sm">
-              <span style="color:var(--green);font-weight:700">${totalsByDriver[d.id].supplied}+</span>
-              <span style="color:var(--red);font-weight:700">${totalsByDriver[d.id].returned}-</span>
+            <span class="col gap-sm">
+              <span>${qtyBreakdownHTML(totalsByDriver[d.id].supplied, totalsByDriver[d.id].supplied330, totalsByDriver[d.id].supplied200)}</span>
+              <span>${qtyBreakdownHTML(totalsByDriver[d.id].returned, totalsByDriver[d.id].returned330, totalsByDriver[d.id].returned200)}</span>
             </span>
           </button>
         `;
@@ -7650,6 +7941,10 @@ async function renderRecorderMain(){
           <option value="carton">كرتون</option>
           <option value="bundle">ربطة</option>
         </select>
+        <select class="input" style="width:100px" id="new_${key}_size" title="حجم العبوة">
+          <option value="330">330 مل</option>
+          <option value="200">200 مل</option>
+        </select>
         <label class="icon-btn" style="cursor:pointer" title="تصوير">📷
           <input type="file" accept="image/*" capture="environment" style="display:none" id="new_${key}_photo">
         </label>
@@ -7695,11 +7990,13 @@ async function renderRecorderMain(){
       if(!rawQty){ toast('أدخل الكمية','err'); return; }
       const unitEl = document.getElementById(`new_${key}_unit`);
       const unit = unitEl ? unitEl.value : 'carton';
+      const sizeEl = document.getElementById(`new_${key}_size`);
+      const bottleSize = sizeEl ? sizeEl.value : '330';
       const bpc = (key==='withdrawals' ? cfg.fridge.bundlesPerCarton : cfg.tankers.bundlesPerCarton) || 2;
       const qty = unit==='bundle' ? rawQty/bpc : rawQty;
       const entry = {
         id: 'w_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
-        note, qty, unit, rawQty, photo: pendingPhoto,
+        note, qty, unit, rawQty, bottleSize, photo: pendingPhoto,
         createdBy: state.currentUser.id, createdByName: state.currentUser.name,
         time: nowTime12(),
       };
@@ -7777,7 +8074,7 @@ function renderRecorderActionPoints(cfg, rec){
           <div class="col gap-sm" style="flex:1;min-width:200px;order:2">
             ${withdrawals.length ? withdrawals.map(w=>`
               <div class="row gap-sm" style="align-items:center;justify-content:space-between;border-bottom:1px solid #EFE9DA;padding:4px 0">
-                <span>${w.qty} كرتون${w.unit==='bundle'?` (${w.rawQty} ربطة)`:''}</span>
+                <span>${w.qty} كرتون${w.unit==='bundle'?` (${w.rawQty} ربطة)`:''} — ${(w.bottleSize||'330')} مل</span>
                 <span class="row gap-sm" style="align-items:center">
                   <span class="muted small">${w.by||''} — ${w.time||''}</span>
                   ${w.createdBy===state.currentUser.id ? `<button type="button" class="icon-btn" data-ap-qty-remove="${p.id}:${w.id}" title="حذف">✕</button>` : ''}
@@ -7789,6 +8086,10 @@ function renderRecorderActionPoints(cfg, rec){
               <select class="input" style="width:95px" id="apUnit_${p.id}">
                 <option value="carton">كرتون</option>
                 <option value="bundle">ربطة</option>
+              </select>
+              <select class="input" style="width:95px" id="apSize_${p.id}" title="حجم العبوة">
+                <option value="330">330 مل</option>
+                <option value="200">200 مل</option>
               </select>
               <button class="btn btn-primary btn-sm" data-ap-add="${p.id}">+ إضافة كمية</button>
             </div>
@@ -7803,9 +8104,11 @@ function renderRecorderActionPoints(cfg, rec){
       const pointId = b.dataset.apAdd;
       const qtyEl = document.getElementById(`apQty_${pointId}`);
       const unitEl = document.getElementById(`apUnit_${pointId}`);
+      const sizeEl = document.getElementById(`apSize_${pointId}`);
       const rawQty = Number(qtyEl.value)||0;
       if(!rawQty){ toast('أدخل الكمية','err'); return; }
       const unit = unitEl ? unitEl.value : 'carton';
+      const bottleSize = sizeEl ? sizeEl.value : '330';
       const qty = unit==='bundle' ? rawQty/bpc : rawQty;
       const mosqueId = state.currentUser.mosqueId;
       const latest = await loadRecord(mosqueId, state.today);
@@ -7813,7 +8116,7 @@ function renderRecorderActionPoints(cfg, rec){
       const point = latest.actionPoints.find(p=>p.id===pointId);
       if(!point){ toast('تعذر إيجاد النقطة','err'); return; }
       if(!point.withdrawals) point.withdrawals = [];
-      point.withdrawals.push({id:'apw_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), qty, unit, rawQty, time: nowTime12(), by: state.currentUser.name, createdBy: state.currentUser.id});
+      point.withdrawals.push({id:'apw_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), qty, unit, rawQty, bottleSize, time: nowTime12(), by: state.currentUser.name, createdBy: state.currentUser.id});
       const ok = await storageSet(recKey(mosqueId, state.today), JSON.stringify(latest));
       if(ok){ toast('تمت إضافة الكمية'); await bumpNotifSite(['livereports','indicator'], mosqueId); } else toast('تعذر الحفظ، حاول مرة أخرى','err');
       recorderRecord = latest;
@@ -7945,6 +8248,8 @@ async function renderSupplierOrderPage(main, mosqueId){
     const limitVal = cfg.fridge.limitValue || 0;
     const live = await computeLiveSupplierQty(mosqueId, orderDate); // informational only (أيام السحب) — never auto-fills the manual quantity
     const manualVal = rec.supplierOrderConfirmed ? (rec.orderRequestedQty||0) : (rec.pendingManualQty||0);
+    const manualVal330 = rec.supplierOrderConfirmed ? (rec.orderRequestedQty330||0) : (rec.pendingManualQty330||0);
+    const manualVal200 = rec.supplierOrderConfirmed ? (rec.orderRequestedQty200||0) : (rec.pendingManualQty200||0);
     const shortfall = mosqueById(mosqueId).supplierShortfall || 0;
     const locked = !!rec.supplierOrderReceived;
     if(justUpdate){
@@ -7953,8 +8258,10 @@ async function renderSupplierOrderPage(main, mosqueId){
       if(wasPendingShown !== isPendingNow){ refresh(false); return; }
       const daysEl = document.getElementById('spDays');
       if(daysEl) daysEl.innerHTML = daysBreakdownHTML(live.days);
-      const manualInputEl = document.getElementById('spManualInput');
-      if(manualInputEl && document.activeElement!==manualInputEl) manualInputEl.value = manualVal;
+      const manual330El = document.getElementById('spManualInput330');
+      if(manual330El && document.activeElement!==manual330El) manual330El.value = manualVal330;
+      const manual200El = document.getElementById('spManualInput200');
+      if(manual200El && document.activeElement!==manual200El) manual200El.value = manualVal200;
       const shortEl = document.getElementById('spShortfallWrap');
       if(shortEl) shortEl.innerHTML = shortfallControlHTML(shortfall, L, rec.supplierOrderConfirmed);
       const timeEl = document.getElementById('spTime');
@@ -7985,7 +8292,10 @@ async function renderSupplierOrderPage(main, mosqueId){
         ${(L.limitNoteVisible!==false && L.limitNoteText) ? `<p class="muted small" style="margin-top:6px">${L.limitNoteText}</p>` : ''}
         <table class="kv-table" style="margin-top:10px">
           ${L.qtyVisible!==false ? `<tr><td>${L.qtyLabel}</td><td>
-            <input type="number" class="input" id="spManualInput" style="max-width:120px;display:inline-block" value="${manualVal}" min="0" ${locked?'disabled':''}>
+            <span class="row gap-sm" style="align-items:center;flex-wrap:wrap">
+              <span class="muted small">330 مل</span><input type="number" class="input" id="spManualInput330" style="max-width:100px;display:inline-block" value="${manualVal330}" min="0" ${locked?'disabled':''}>
+              <span class="muted small">200 مل</span><input type="number" class="input" id="spManualInput200" style="max-width:100px;display:inline-block" value="${manualVal200}" min="0" ${locked?'disabled':''}>
+            </span>
             <span class="muted small" id="spDays" style="margin-inline-start:10px">${daysBreakdownHTML(live.days)}</span>
           </td></tr>` : ''}
           ${L.arrivalVisible!==false ? `<tr><td>${L.arrivalLabel}</td><td><input type="time" class="input" id="spTime" style="max-width:150px" value="${rec.supplierArrivalTime||''}"></td></tr>` : ''}
@@ -8004,10 +8314,20 @@ async function renderSupplierOrderPage(main, mosqueId){
         <div id="spOrdersLog"></div>
       </div>` : ''}
     `;
-    const manualInput = document.getElementById('spManualInput');
-    if(manualInput) manualInput.addEventListener('input', async e=>{
+    const manual330Input = document.getElementById('spManualInput330');
+    if(manual330Input) manual330Input.addEventListener('input', async e=>{
       const latest = await loadRecord(mosqueId, orderDate);
-      latest.pendingManualQty = Number(e.target.value)||0;
+      latest.pendingManualQty330 = Number(e.target.value)||0;
+      latest.pendingManualQty200 = Number(document.getElementById('spManualInput200')?.value)||0;
+      latest.pendingManualQty = latest.pendingManualQty330 + latest.pendingManualQty200;
+      await storageSet(recKey(mosqueId, orderDate), JSON.stringify(latest));
+    });
+    const manual200Input = document.getElementById('spManualInput200');
+    if(manual200Input) manual200Input.addEventListener('input', async e=>{
+      const latest = await loadRecord(mosqueId, orderDate);
+      latest.pendingManualQty200 = Number(e.target.value)||0;
+      latest.pendingManualQty330 = Number(document.getElementById('spManualInput330')?.value)||0;
+      latest.pendingManualQty = latest.pendingManualQty330 + latest.pendingManualQty200;
       await storageSet(recKey(mosqueId, orderDate), JSON.stringify(latest));
     });
     wireShortfallButton('spShortfallWrap', mosqueId, async (amount)=>{
@@ -8090,10 +8410,27 @@ async function renderSupervisorMain(){
 
   const fr = cfg.fridge, tk = cfg.tankers;
   const fridgeRowsMap = {
-    opening: `<tr><td>${fr.fields.opening.label}</td><td><input type="number" min="0" class="input" id="f_opening" value="${supRecord.openingStock||0}"></td></tr>`,
-    newCartons: `<tr><td>${fr.fields.newCartons.label}</td><td><input type="number" min="0" class="input" id="f_new" value="${supRecord.newCartons||0}"></td></tr>`,
-    totalWithdrawn: `<tr><td>${fr.fields.totalWithdrawn.label}</td><td><span class="kv-readonly" id="f_totalWithdrawn">0</span></td></tr>`,
-    remaining: `<tr><td>${fr.fields.remaining.label}</td><td><span class="kv-readonly" id="f_remaining">0</span>${fr.showCapacityPercent!==false ? ` <span class="muted small" id="f_capacityPercent"></span>` : ''}</td></tr>`,
+    opening: `<tr><td>${fr.fields.opening.label}</td><td>
+      <span class="row gap-sm" style="align-items:center;flex-wrap:wrap">
+        <span class="muted small">330 مل</span><input type="number" min="0" class="input" style="max-width:100px" id="f_opening330" value="${supRecord.openingStock330||0}">
+        <span class="muted small">200 مل</span><input type="number" min="0" class="input" style="max-width:100px" id="f_opening200" value="${supRecord.openingStock200||0}">
+      </span>
+    </td></tr>`,
+    newCartons: `<tr><td>${fr.fields.newCartons.label}</td><td>
+      <span class="row gap-sm" style="align-items:center;flex-wrap:wrap">
+        <span class="muted small">330 مل</span><input type="number" min="0" class="input" style="max-width:100px" id="f_new330" value="${supRecord.newCartons330||0}">
+        <span class="muted small">200 مل</span><input type="number" min="0" class="input" style="max-width:100px" id="f_new200" value="${supRecord.newCartons200||0}">
+      </span>
+    </td></tr>`,
+    totalWithdrawn: `<tr><td>${fr.fields.totalWithdrawn.label}</td><td>
+      الإجمالي: <strong id="f_totalWithdrawn" style="color:var(--deep);font-size:1.08em">0</strong><br>عبوات 330مل: <strong id="f_totalWithdrawn330" style="color:var(--deep);font-size:1.08em">0</strong><br>عبوات 200مل: <strong id="f_totalWithdrawn200" style="color:var(--deep);font-size:1.08em">0</strong>
+    </td></tr>`,
+    remaining: `<tr><td>${fr.fields.remaining.label}</td><td>
+      <span class="row gap-sm" style="align-items:center;flex-wrap:wrap">
+        <span class="muted small">330 مل: <span class="kv-readonly" id="f_remaining330">0</span></span>
+        <span class="muted small">200 مل: <span class="kv-readonly" id="f_remaining200">0</span></span>
+      </span>
+      ${fr.showCapacityPercent!==false ? ` <span class="muted small" id="f_capacityPercent"></span>` : ''}</td></tr>`,
     capacity: fr.capacityLabel.visible!==false ? `<tr><td id="f_capacityLabelCell">${fr.capacityLabel.label}</td><td><span class="kv-readonly" id="f_capacityValue">${fr.capacityValue||0}</span></td></tr>` : '',
     limit: fr.limitLabel.visible!==false ? `<tr><td id="f_limitLabelCell">${fr.limitLabel.label}</td><td><span class="kv-readonly" id="f_limitValue">${fr.limitValue||0}</span> <span class="muted small" id="f_limitStats"></span><div id="f_limitWarning"></div></td></tr>` : '',
     target: fr.targetLabel.visible!==false ? `<tr><td id="f_targetLabelCell">${fr.targetLabel.label}</td><td><span class="kv-readonly" id="f_targetValue">${fr.targetValue||0}</span> <span id="f_targetMark"></span> <span class="muted small" id="f_targetStats"></span><div id="f_targetMessage"></div></td></tr>` : '',
@@ -8107,7 +8444,12 @@ async function renderSupervisorMain(){
             </div>
           </td></tr>`,
     count: `<tr><td>${tk.fields.count.label}</td><td><input type="number" min="0" class="input" id="f_tankerCount" value="${supRecord.tankerCount||0}"></td></tr>`,
-    received: `<tr><td>${tk.fields.received.label}</td><td><input type="number" min="0" class="input" id="f_qtyReceived" value="${supRecord.qtyReceived||0}"></td></tr>`,
+    received: `<tr><td>${tk.fields.received.label}</td><td>
+      <span class="row gap-sm" style="align-items:center;flex-wrap:wrap">
+        <span class="muted small">330 مل</span><input type="number" min="0" class="input" style="max-width:100px" id="f_qtyReceived330" value="${supRecord.qtyReceived330||0}">
+        <span class="muted small">200 مل</span><input type="number" min="0" class="input" style="max-width:100px" id="f_qtyReceived200" value="${supRecord.qtyReceived200||0}">
+      </span>
+    </td></tr>`,
     distributed: `<tr><td>${tk.fields.distributed.label}</td><td><span class="kv-readonly" id="f_qtyDistributed">0</span></td></tr>`,
     surplus: `<tr><td>${tk.fields.surplus.label}</td><td><span class="kv-readonly" id="f_qtySurplus">0</span></td></tr>`,
   };
@@ -8273,12 +8615,18 @@ async function renderSupervisorMain(){
     await storageSet(`skq_live__${mosqueId}__${state.supDate}`, JSON.stringify(supRecord));
     await bumpNotifSite(alsoIndicator ? ['livereports','indicator'] : ['livereports'], mosqueId);
   }
-  on('f_opening','input', ()=>{ supRecord.openingStock = Number(document.getElementById('f_opening').value)||0; updateStats(); });
-  on('f_opening','change', ()=>pushLiveNow(true));
-  on('f_new','input', ()=>{ supRecord.newCartons = Number(document.getElementById('f_new').value)||0; updateStats(); });
-  on('f_new','change', ()=>pushLiveNow(true));
-  on('f_qtyReceived','input', ()=>{ supRecord.qtyReceived = Number(document.getElementById('f_qtyReceived').value)||0; updateStats(); });
-  on('f_qtyReceived','change', ()=>pushLiveNow(false));
+  on('f_opening330','input', ()=>{ supRecord.openingStock330 = Number(document.getElementById('f_opening330').value)||0; supRecord.openingStock = (supRecord.openingStock330||0)+(supRecord.openingStock200||0); updateStats(); });
+  on('f_opening330','change', ()=>pushLiveNow(true));
+  on('f_opening200','input', ()=>{ supRecord.openingStock200 = Number(document.getElementById('f_opening200').value)||0; supRecord.openingStock = (supRecord.openingStock330||0)+(supRecord.openingStock200||0); updateStats(); });
+  on('f_opening200','change', ()=>pushLiveNow(true));
+  on('f_new330','input', ()=>{ supRecord.newCartons330 = Number(document.getElementById('f_new330').value)||0; supRecord.newCartons = (supRecord.newCartons330||0)+(supRecord.newCartons200||0); updateStats(); });
+  on('f_new330','change', ()=>pushLiveNow(true));
+  on('f_new200','input', ()=>{ supRecord.newCartons200 = Number(document.getElementById('f_new200').value)||0; supRecord.newCartons = (supRecord.newCartons330||0)+(supRecord.newCartons200||0); updateStats(); });
+  on('f_new200','change', ()=>pushLiveNow(true));
+  on('f_qtyReceived330','input', ()=>{ supRecord.qtyReceived330 = Number(document.getElementById('f_qtyReceived330').value)||0; supRecord.qtyReceived = (supRecord.qtyReceived330||0)+(supRecord.qtyReceived200||0); updateStats(); });
+  on('f_qtyReceived330','change', ()=>pushLiveNow(false));
+  on('f_qtyReceived200','input', ()=>{ supRecord.qtyReceived200 = Number(document.getElementById('f_qtyReceived200').value)||0; supRecord.qtyReceived = (supRecord.qtyReceived330||0)+(supRecord.qtyReceived200||0); updateStats(); });
+  on('f_qtyReceived200','change', ()=>pushLiveNow(false));
   on('f_tankerTime','input', ()=>{ supRecord.tankerArrival = document.getElementById('f_tankerTime').value||''; });
   on('f_tankerTime','change', ()=>pushLiveNow(false));
   on('f_tankerCount','input', ()=>{ supRecord.tankerCount = Number(document.getElementById('f_tankerCount').value)||0; });
@@ -8328,6 +8676,7 @@ function renderWithdrawList(){
   } else {
   wrap.innerHTML = supRecord.withdrawals.map((w,i)=>{
     const unit = w.unit || 'carton';
+    const size = w.bottleSize || '330';
     const rawQty = w.rawQty!==undefined ? w.rawQty : (w.qty||0);
     return `
     <div class="withdraw-row">
@@ -8336,6 +8685,10 @@ function renderWithdrawList(){
       <select class="input" style="max-width:100px" data-w-unit="${i}">
         <option value="carton" ${unit==='carton'?'selected':''}>كرتون</option>
         <option value="bundle" ${unit==='bundle'?'selected':''}>ربطة</option>
+      </select>
+      <select class="input" style="max-width:100px" data-w-size="${i}" title="حجم العبوة">
+        <option value="330" ${size==='330'?'selected':''}>330 مل</option>
+        <option value="200" ${size==='200'?'selected':''}>200 مل</option>
       </select>
       ${unit==='bundle' ? `<span class="muted small">كرتون ${w.qty||0} / الربطات ${rawQty}</span>` : ''}
       ${showPhoto ? `
@@ -8348,6 +8701,10 @@ function renderWithdrawList(){
     </div>
   `;}).join('');
   }
+  Array.from(wrap.querySelectorAll('[data-w-size]')).forEach(el=>el.addEventListener('change', async e=>{
+    supRecord.withdrawals[+el.dataset.wSize].bottleSize = e.target.value;
+    await persistSupWithdrawals();
+  }));
   Array.from(wrap.querySelectorAll('[data-w-note]')).forEach(el=>el.addEventListener('input', e=>{
     supRecord.withdrawals[+el.dataset.wNote].note = e.target.value;
     renderFridgeStatementTable();
@@ -8415,6 +8772,7 @@ function renderTankerWithdrawList(){
   } else {
     wrap.innerHTML = supRecord.tankerWithdrawals.map((w,i)=>{
       const unit = w.unit || 'carton';
+      const size = w.bottleSize || '330';
       const rawQty = w.rawQty!==undefined ? w.rawQty : (w.qty||0);
       return `
       <div class="withdraw-row">
@@ -8423,6 +8781,10 @@ function renderTankerWithdrawList(){
         <select class="input" style="max-width:100px" data-tw-unit="${i}">
           <option value="carton" ${unit==='carton'?'selected':''}>كرتون</option>
           <option value="bundle" ${unit==='bundle'?'selected':''}>ربطة</option>
+        </select>
+        <select class="input" style="max-width:100px" data-tw-size="${i}" title="حجم العبوة">
+          <option value="330" ${size==='330'?'selected':''}>330 مل</option>
+          <option value="200" ${size==='200'?'selected':''}>200 مل</option>
         </select>
         ${unit==='bundle' ? `<span class="muted small">كرتون ${w.qty||0} / الربطات ${rawQty}</span>` : ''}
         ${showPhoto ? `
@@ -8435,6 +8797,10 @@ function renderTankerWithdrawList(){
       </div>
     `;}).join('');
   }
+  Array.from(wrap.querySelectorAll('[data-tw-size]')).forEach(el=>el.addEventListener('change', async e=>{
+    supRecord.tankerWithdrawals[+el.dataset.twSize].bottleSize = e.target.value;
+    await persistSupWithdrawals(true);
+  }));
   function recalcTwQty(i){
     const w = supRecord.tankerWithdrawals[i];
     w.qty = w.unit==='bundle' ? (Number(w.rawQty)||0)/bpc : (Number(w.rawQty)||0);
@@ -8492,17 +8858,30 @@ function renderTankerStatementTable(){
 }
 function updateStats(){
   const gv = (id)=>{ const el=document.getElementById(id); return el ? (Number(el.value)||0) : null; };
-  const opening = gv('f_opening') ?? (supRecord.openingStock||0);
-  const news = gv('f_new') ?? (supRecord.newCartons||0);
-  const totalWithdrawn = supRecord.withdrawals.reduce((s,w)=>s+(Number(w.qty)||0),0);
-  const remaining = opening + news - totalWithdrawn;
+  const opening330 = gv('f_opening330') ?? (supRecord.openingStock330||0);
+  const opening200 = gv('f_opening200') ?? (supRecord.openingStock200||0);
+  const news330 = gv('f_new330') ?? (supRecord.newCartons330||0);
+  const news200 = gv('f_new200') ?? (supRecord.newCartons200||0);
+  const totalWithdrawn330 = withdrawnBySize(supRecord, '330');
+  const totalWithdrawn200 = withdrawnBySize(supRecord, '200');
+  const totalWithdrawn = totalWithdrawn330 + totalWithdrawn200;
+  const remaining330 = opening330 + news330 - totalWithdrawn330;
+  const remaining200 = opening200 + news200 - totalWithdrawn200;
+  const remaining = remaining330 + remaining200;
   const twEl = document.getElementById('f_totalWithdrawn');
   if(twEl) twEl.textContent = totalWithdrawn;
-  const remainEl = document.getElementById('f_remaining');
-  if(remainEl){
-    remainEl.textContent = remaining;
-    remainEl.style.color = remaining<0 ? 'var(--red)' : 'var(--deep)';
-  }
+  const tw330El = document.getElementById('f_totalWithdrawn330');
+  if(tw330El) tw330El.textContent = totalWithdrawn330;
+  const tw200El = document.getElementById('f_totalWithdrawn200');
+  if(tw200El) tw200El.textContent = totalWithdrawn200;
+  const twBottles330El = document.getElementById('f_totalWithdrawnBottles330');
+  if(twBottles330El) twBottles330El.textContent = totalWithdrawn330 * bottlesPerCartonForSize('330');
+  const twBottles200El = document.getElementById('f_totalWithdrawnBottles200');
+  if(twBottles200El) twBottles200El.textContent = totalWithdrawn200 * bottlesPerCartonForSize('200');
+  const remain330El = document.getElementById('f_remaining330');
+  if(remain330El){ remain330El.textContent = remaining330; remain330El.style.color = remaining330<0 ? 'var(--red)' : 'var(--deep)'; }
+  const remain200El = document.getElementById('f_remaining200');
+  if(remain200El){ remain200El.textContent = remaining200; remain200El.style.color = remaining200<0 ? 'var(--red)' : 'var(--deep)'; }
   const capacity = getFormConfig(state.currentUser.mosqueId).fridge.capacityValue || 0;
   const capEl = document.getElementById('f_capacityPercent');
   if(capEl){
@@ -9098,8 +9477,8 @@ async function saveSupervisorRecord(){
   }
   const missing = [];
   const cfgForSave = getFormConfig(m.id);
-  const openingEl = document.getElementById('f_opening');
-  if(cfgForSave.fridge.visible!==false && (!openingEl || openingEl.value==='')){ missing.push('تسجيل الرصيد الابتدائي (كرتون)'); }
+  const openingEl = document.getElementById('f_opening330') || document.getElementById('f_opening200');
+  if(cfgForSave.fridge.visible!==false && !openingEl){ missing.push('تسجيل الرصيد الابتدائي (كرتون)'); }
   const fridgeQtyTotal = (supRecord.withdrawals||[]).reduce((s,w)=>s+(Number(w.qty)||0),0);
   const tankerQty = (supRecord.tankerWithdrawals||[]).reduce((s,w)=>s+(Number(w.qty)||0),0);
   const fridgeOn = cfgForSave.fridge.visible!==false, tankersOn = cfgForSave.tankers.visible!==false;
@@ -9124,11 +9503,17 @@ async function saveSupervisorRecord(){
   const gv = (id)=>{ const el=document.getElementById(id); return el ? el.value : null; };
   const numOr = (id, fallback)=>{ const v = gv(id); return v!==null ? (Number(v)||0) : fallback; };
   const strOr = (id, fallback)=>{ const v = gv(id); return v!==null ? v : fallback; };
-  supRecord.openingStock = numOr('f_opening', supRecord.openingStock||0);
-  supRecord.newCartons = numOr('f_new', supRecord.newCartons||0);
+  supRecord.openingStock330 = numOr('f_opening330', supRecord.openingStock330||0);
+  supRecord.openingStock200 = numOr('f_opening200', supRecord.openingStock200||0);
+  supRecord.newCartons330 = numOr('f_new330', supRecord.newCartons330||0);
+  supRecord.newCartons200 = numOr('f_new200', supRecord.newCartons200||0);
+  supRecord.openingStock = supRecord.openingStock330 + supRecord.openingStock200;
+  supRecord.newCartons = supRecord.newCartons330 + supRecord.newCartons200;
   supRecord.tankerArrival = strOr('f_tankerTime', supRecord.tankerArrival||'');
   supRecord.tankerCount = numOr('f_tankerCount', supRecord.tankerCount||0);
-  supRecord.qtyReceived = numOr('f_qtyReceived', supRecord.qtyReceived||0);
+  supRecord.qtyReceived330 = numOr('f_qtyReceived330', supRecord.qtyReceived330||0);
+  supRecord.qtyReceived200 = numOr('f_qtyReceived200', supRecord.qtyReceived200||0);
+  supRecord.qtyReceived = supRecord.qtyReceived330 + supRecord.qtyReceived200;
   supRecord.qtyDistributed = (supRecord.tankerWithdrawals||[]).reduce((s,w)=>s+(Number(w.qty)||0),0);
   supRecord.distributionStart = strOr('f_distStart', supRecord.distributionStart||'');
   supRecord.distributionEnd = strOr('f_distEnd', supRecord.distributionEnd||'');
