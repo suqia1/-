@@ -473,8 +473,8 @@ let state = {
   demoHintText: 'حسابات تجريبية:\nالإدارة: admin / admin123\nمشرف قباء: quba_sup / 1234 · مشرف الميقات: miqat_sup / 1234 · مشرف القبلتين: qiblatain_sup / 1234',
   adminTab: 'users',
   attendLogMonth: null,
-  sidebarLabels: {users:'المستخدمون والمشرفون', collabs:'المتعاونون', reports:'المتابعة والتقارير', livereports:'التقارير مباشر', attendlog:'جدول الحضور والغياب', online:'المتصلون الآن', supplier:'المورد', supplierorder:'طلب عبوات للثلاجة', monthly:'الكراتين الموزعة', cartons330:'الكراتين الموزعة لعبوات 330مل', cartons200:'الكراتين الموزعة لعبوات 200مل', indicator:'مؤشر الثلاجة', private:'معلومات خاصة', approvereports:'اعتماد التقارير اليومية', supplierlog:'سجل المورد', warehouseadmin:'المستودع', driveradmin:'سائق ناقلات الماء'},
-  sidebarOrder: ['users','collabs','reports','livereports','attendlog','online','supplier','supplierlog','warehouseadmin','driveradmin','monthly','cartons330','cartons200','indicator','private'],
+  sidebarLabels: {users:'المستخدمون والمشرفون', collabs:'المتعاونون', reports:'المتابعة والتقارير', livereports:'التقارير مباشر', attendlog:'جدول الحضور والغياب', online:'المتصلون الآن', supplier:'المورد', supplierorder:'طلب عبوات للثلاجة', monthly:'الكراتين الموزعة', cartons330:'الكراتين الموزعة لعبوات 330مل', cartons200:'الكراتين الموزعة لعبوات 200مل', indicator:'مؤشر الثلاجة', private:'معلومات خاصة', approvereports:'اعتماد التقارير اليومية', supplierlog:'سجل المورد', warehouseadmin:'المستودع', driveradmin:'سائق ناقلات الماء', photos:'الصور'},
+  sidebarOrder: ['users','collabs','reports','livereports','attendlog','online','supplier','supplierlog','warehouseadmin','driveradmin','monthly','cartons330','cartons200','indicator','photos','private'],
   presenceHidden: {},
   notifCounters: {},
   notifSeenCounters: {},
@@ -1546,6 +1546,7 @@ function renderAdminMain(){
   if(state.adminTab==='cartons330') return renderAdminMonthlyBySize(main, '330');
   if(state.adminTab==='cartons200') return renderAdminMonthlyBySize(main, '200');
   if(state.adminTab==='indicator') return renderAdminIndicator(main);
+  if(state.adminTab==='photos') return renderGsPhotosPage(main);
   if(state.adminTab==='private') return renderAdminPrivateInfo(main);
 }
 
@@ -6462,7 +6463,112 @@ function renderGsMain(){
     renderAdminCollabs(main);
   }
 }
+function renderGsPhotosPage(main){
+  if(!state.photosMonth) state.photosMonth = state.today.slice(0,7);
+  if(!state.photosZoom) state.photosZoom = 140;
+  if(!state.photosFilter) state.photosFilter = {entry:true, exit:true, fridge:true, receipt:true};
+  main.innerHTML = `
+    <h2>${state.sidebarLabels.photos}</h2>
+    <p class="muted small">كل صور صورة الحضور/الخروج/الثلاجة/السند المرفوعة من جميع المواقع، مجمّعة حسب اليوم — لمراجعتها أو حذفها لاحقًا.</p>
+    <div class="row gap-md" style="margin-bottom:14px;align-items:flex-end;flex-wrap:wrap">
+      <div>
+        <label class="label">الشهر</label>
+        <input type="month" class="input" id="photosMonthPicker" value="${state.photosMonth}">
+      </div>
+      <div class="row gap-sm" style="align-items:center;flex-wrap:wrap">
+        <label class="row gap-sm" style="align-items:center;cursor:pointer"><input type="checkbox" id="pf_entry" ${state.photosFilter.entry?'checked':''}> صورة الحضور</label>
+        <label class="row gap-sm" style="align-items:center;cursor:pointer"><input type="checkbox" id="pf_exit" ${state.photosFilter.exit?'checked':''}> صورة الخروج</label>
+        <label class="row gap-sm" style="align-items:center;cursor:pointer"><input type="checkbox" id="pf_fridge" ${state.photosFilter.fridge?'checked':''}> صورة الثلاجة</label>
+        <label class="row gap-sm" style="align-items:center;cursor:pointer"><input type="checkbox" id="pf_receipt" ${state.photosFilter.receipt?'checked':''}> صورة السند</label>
+      </div>
+      <div class="row gap-sm" style="align-items:center">
+        <label class="label" style="margin:0">تكبير/تصغير</label>
+        <button type="button" class="btn btn-ghost btn-sm" id="photosZoomOut">−</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="photosZoomIn">+</button>
+      </div>
+    </div>
+    <div id="photosContent"></div>
+  `;
+  document.getElementById('photosMonthPicker').addEventListener('change', e=>{
+    state.photosMonth = e.target.value || state.photosMonth;
+    loadAndRenderPhotos(main);
+  });
+  ['entry','exit','fridge','receipt'].forEach(k=>{
+    document.getElementById('pf_'+k).addEventListener('change', e=>{
+      state.photosFilter[k] = e.target.checked;
+      loadAndRenderPhotos(main);
+    });
+  });
+  document.getElementById('photosZoomOut').addEventListener('click', ()=>{
+    state.photosZoom = Math.max(70, state.photosZoom-20);
+    loadAndRenderPhotos(main);
+  });
+  document.getElementById('photosZoomIn').addEventListener('click', ()=>{
+    state.photosZoom = Math.min(320, state.photosZoom+20);
+    loadAndRenderPhotos(main);
+  });
+  loadAndRenderPhotos(main);
+}
+async function loadAndRenderPhotos(main){
+  const content = document.getElementById('photosContent');
+  content.innerHTML = `<div class="empty-state">جارٍ التحميل…</div>`;
+  const yyyymm = state.photosMonth;
+  const total = daysInMonth(yyyymm);
+  const data = await loadMonthData(yyyymm);
+  const photoTypes = [
+    {key:'entry', field:'entryPhoto', label:'صورة الحضور'},
+    {key:'exit', field:'exitPhoto', label:'صورة الخروج'},
+    {key:'fridge', field:'fridgePhoto', label:'صورة الثلاجة'},
+    {key:'receipt', field:'receipt', label:'صورة السند'},
+  ].filter(t=>state.photosFilter[t.key]);
+  const dayBlocks = [];
+  for(let d=1; d<=total; d++){
+    const dateStr = monthDateStr(yyyymm, d);
+    const items = [];
+    MOSQUES.forEach(m=>{
+      const rec = data[m.id] ? data[m.id][dateStr] : null;
+      if(!rec) return;
+      photoTypes.forEach(t=>{
+        if(rec[t.field]) items.push({mosqueId:m.id, mosqueName:m.name, dateStr, field:t.field, label:t.label, src:rec[t.field]});
+      });
+    });
+    if(items.length) dayBlocks.push({dateStr, items});
+  }
+  if(!dayBlocks.length){
+    content.innerHTML = `<p class="muted small">لا توجد صور مطابقة لهذا الشهر بالفلاتر المحددة.</p>`;
+    return;
+  }
+  const z = state.photosZoom;
+  content.innerHTML = dayBlocks.map(block=>`
+    <div class="card" style="margin-bottom:16px">
+      <h4 style="margin-top:0">${dayNameOnly(block.dateStr)} — ${humanDateNoDay(block.dateStr)}</h4>
+      <div class="row gap-md" style="flex-wrap:wrap">
+        ${block.items.map(it=>`
+        <div style="width:${z}px">
+          <img src="${it.src}" class="lightbox-img" style="width:${z}px;height:${z}px;object-fit:cover;border-radius:8px;cursor:zoom-in;display:block">
+          <p class="muted small" style="margin:4px 0 2px">${it.mosqueName}</p>
+          <p class="muted small" style="margin:0 0 4px">${it.label}</p>
+          <button type="button" class="btn btn-danger btn-sm" data-photo-del="${it.mosqueId}|${it.dateStr}|${it.field}" style="width:100%">🗑️ حذف</button>
+        </div>`).join('')}
+      </div>
+    </div>
+  `).join('');
+  Array.from(content.querySelectorAll('.lightbox-img')).forEach(img=>{
+    img.addEventListener('click', ()=>openLightbox(img.src));
+  });
+  Array.from(content.querySelectorAll('[data-photo-del]')).forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      const [mosqueId, dateStr, field] = b.dataset.photoDel.split('|');
+      const latest = await loadRecord(mosqueId, dateStr);
+      latest[field] = null;
+      await storageSet(recKey(mosqueId, dateStr), JSON.stringify(latest));
+      toast('تم حذف الصورة');
+      loadAndRenderPhotos(main);
+    });
+  });
+}
 let gsSupplierOrderRefreshInterval = null;
+
 async function renderGsSupplierOrderPage(main){
   main.innerHTML = `<div class="empty-state">جارٍ التحميل…</div>`;
   const sites = activeMosques();
