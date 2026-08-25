@@ -18,5 +18,5 @@ jobs:
           DEST_BUCKET: ${{ secrets.B2_BUCKET_ID }}
           DEST_PATH: '/'
           AWS_S3_ENDPOINT: 'https://s3.us-west-002.backblazeb2.com'
-          AWS_ACCESS_KEY_ID: ${{ secrets.B2_APP_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.B2_APP_KEY }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.B2_APPLICATION_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.B2_APPLICATION_KEY }}
