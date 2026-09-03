@@ -8746,14 +8746,14 @@ async function renderSupervisorMain(){
   renderWithdrawList();
   renderTankerWithdrawList();
   updateStats();
-  bindFileDrop('receiptInput','receiptPreview','receiptBadge', v=>supRecord.receipt=v, true, supRecord.receipt);
-  bindCameraFileDrop('entryInput','entryPreview', v=>supRecord.entryPhoto=v, supRecord.entryPhoto, 'entryTimeLabel');
-  bindFileDrop('notesPhotoInput','notesPhotoPreview',null, v=>supRecord.notesPhoto=v, false, supRecord.notesPhoto);
-  bindCameraFileDrop('exitInput','exitPreview', v=>supRecord.exitPhoto=v, supRecord.exitPhoto, 'exitTimeLabel');
-  bindCameraFileDrop('fridgePhotoInput','fridgePhotoPreview', v=>supRecord.fridgePhoto=v, supRecord.fridgePhoto, 'fridgePhotoTimeLabel');
+  bindFileDrop('receiptInput','receiptPreview','receiptBadge', v=>{supRecord.receipt=v; persistSupDraft();}, true, supRecord.receipt);
+  bindCameraFileDrop('entryInput','entryPreview', v=>{supRecord.entryPhoto=v; persistSupDraft();}, supRecord.entryPhoto, 'entryTimeLabel');
+  bindFileDrop('notesPhotoInput','notesPhotoPreview',null, v=>{supRecord.notesPhoto=v; persistSupDraft();}, false, supRecord.notesPhoto);
+  bindCameraFileDrop('exitInput','exitPreview', v=>{supRecord.exitPhoto=v; persistSupDraft();}, supRecord.exitPhoto, 'exitTimeLabel');
+  bindCameraFileDrop('fridgePhotoInput','fridgePhotoPreview', v=>{supRecord.fridgePhoto=v; persistSupDraft();}, supRecord.fridgePhoto, 'fridgePhotoTimeLabel');
   if(!supRecord.customPhotos) supRecord.customPhotos = {};
   (cfg.customPhotos||[]).filter(p=>p.visible!==false).forEach(p=>{
-    bindFileDrop(`customPhoto_${p.id}_input`, `customPhoto_${p.id}_preview`, null, v=>{ supRecord.customPhotos[p.id]=v; }, false, supRecord.customPhotos[p.id]);
+    bindFileDrop(`customPhoto_${p.id}_input`, `customPhoto_${p.id}_preview`, null, v=>{ supRecord.customPhotos[p.id]=v; persistSupDraft(); }, false, supRecord.customPhotos[p.id]);
   });
   renderAttendanceEditable(mosqueId);
   renderWorkHours();
@@ -8764,6 +8764,7 @@ async function renderSupervisorMain(){
     supRecord.attendance = {};
     supRecord.attendanceTimestamps = {};
     renderAttendanceEditable(mosqueId);
+    persistSupDraft();
     toast('تم إعادة تعيين تحضير جميع المتعاونين');
   });
   renderActionPoints();
@@ -9200,6 +9201,26 @@ async function persistSupActionPoints(){
   await storageSet(recKey(mosqueId, state.supDate), JSON.stringify(latest));
   await bumpNotifSite(['livereports','indicator'], mosqueId);
 }
+// يحفظ فورًا كل ما تم إدخاله (صور الدخول/الخروج/الثلاجة/السند، والتحضير) فور تغييره،
+// حتى لا تُفقد البيانات إذا خرج المشرف قبل الضغط على "حفظ بيانات اليوم".
+// هذه بيانات مسودة يمكن حذفها لاحقًا يدويًا؛ لا علاقة لها بشرط اكتمال الحفظ النهائي.
+async function persistSupDraft(){
+  if(!state.currentUser || !state.currentUser.mosqueId) return;
+  const mosqueId = state.currentUser.mosqueId;
+  const latest = await loadRecord(mosqueId, state.supDate);
+  latest.entryPhoto = supRecord.entryPhoto;
+  latest.exitPhoto = supRecord.exitPhoto;
+  latest.fridgePhoto = supRecord.fridgePhoto;
+  latest.receipt = supRecord.receipt;
+  latest.notesPhoto = supRecord.notesPhoto;
+  latest.customPhotos = supRecord.customPhotos;
+  latest.attendance = supRecord.attendance;
+  latest.attendanceNotes = supRecord.attendanceNotes;
+  latest.attendanceTimestamps = supRecord.attendanceTimestamps;
+  latest.workTimes = supRecord.workTimes;
+  latest.customAttendanceStats = supRecord.customAttendanceStats;
+  await storageSet(recKey(mosqueId, state.supDate), JSON.stringify(latest));
+}
 function nowTime12raw(){
   const d = new Date();
   return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
@@ -9284,6 +9305,7 @@ function renderAttendanceEditable(mosqueId){
         }
       }
       renderAttendanceEditable(mosqueId);
+      persistSupDraft();
     });
   });
   Array.from(wrap.querySelectorAll('[data-att-late]')).forEach(b=>{
@@ -9294,6 +9316,7 @@ function renderAttendanceEditable(mosqueId){
       if(cur.late) return; // permanent once set
       const now = new Date(); cur.late = {display: nowTime12(), raw: now.toTimeString().slice(0,5)};
       renderAttendanceEditable(mosqueId);
+      persistSupDraft();
     });
   });
   Array.from(wrap.querySelectorAll('[data-att-withdrawn]')).forEach(b=>{
@@ -9304,11 +9327,13 @@ function renderAttendanceEditable(mosqueId){
       if(cur.withdrawn) return; // permanent once set
       const now = new Date(); cur.withdrawn = {display: nowTime12(), raw: now.toTimeString().slice(0,5)};
       renderAttendanceEditable(mosqueId);
+      persistSupDraft();
     });
   });
   Array.from(wrap.querySelectorAll('[data-att-note]')).forEach(inp=>{
     inp.addEventListener('change', ()=>{
       supRecord.attendanceNotes[inp.dataset.attNote] = inp.value;
+      persistSupDraft();
     });
   });
   function groupMatesOf(cid){
@@ -9326,6 +9351,7 @@ function renderAttendanceEditable(mosqueId){
         supRecord.workTimes[mateId].start = inp.value;
       });
       renderAttendanceEditable(mosqueId);
+      persistSupDraft();
     });
   });
   Array.from(wrap.querySelectorAll('[data-work-end]')).forEach(inp=>{
@@ -9339,6 +9365,7 @@ function renderAttendanceEditable(mosqueId){
         supRecord.workTimes[mateId].end = inp.value;
       });
       renderAttendanceEditable(mosqueId);
+      persistSupDraft();
     });
   });
   Array.from(wrap.querySelectorAll('[data-work-start-reset]')).forEach(b=>{
@@ -9346,6 +9373,7 @@ function renderAttendanceEditable(mosqueId){
       const cid = b.dataset.workStartReset;
       if(supRecord.workTimes && supRecord.workTimes[cid]) supRecord.workTimes[cid].start = '';
       renderAttendanceEditable(mosqueId);
+      persistSupDraft();
     });
   });
   Array.from(wrap.querySelectorAll('[data-work-end-reset]')).forEach(b=>{
@@ -9353,11 +9381,13 @@ function renderAttendanceEditable(mosqueId){
       const cid = b.dataset.workEndReset;
       if(supRecord.workTimes && supRecord.workTimes[cid]) supRecord.workTimes[cid].end = '';
       renderAttendanceEditable(mosqueId);
+      persistSupDraft();
     });
   });
   Array.from(wrap.querySelectorAll('[data-custom-stat-input]')).forEach(inp=>{
     inp.addEventListener('change', ()=>{
       supRecord.customAttendanceStats[inp.dataset.customStatInput] = inp.value;
+      persistSupDraft();
     });
   });
 }
