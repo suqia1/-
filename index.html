@@ -8722,24 +8722,26 @@ async function renderSupervisorMain(){
     await bumpNotifSite(alsoIndicator ? ['livereports','indicator'] : ['livereports'], mosqueId);
   }
   on('f_opening330','input', ()=>{ supRecord.openingStock330 = Number(document.getElementById('f_opening330').value)||0; supRecord.openingStock = (supRecord.openingStock330||0)+(supRecord.openingStock200||0); updateStats(); });
-  on('f_opening330','change', ()=>pushLiveNow(true));
+  on('f_opening330','change', ()=>{ pushLiveNow(true); persistSupDraft(); });
   on('f_opening200','input', ()=>{ supRecord.openingStock200 = Number(document.getElementById('f_opening200').value)||0; supRecord.openingStock = (supRecord.openingStock330||0)+(supRecord.openingStock200||0); updateStats(); });
-  on('f_opening200','change', ()=>pushLiveNow(true));
+  on('f_opening200','change', ()=>{ pushLiveNow(true); persistSupDraft(); });
   on('f_new330','input', ()=>{ supRecord.newCartons330 = Number(document.getElementById('f_new330').value)||0; supRecord.newCartons = (supRecord.newCartons330||0)+(supRecord.newCartons200||0); updateStats(); });
-  on('f_new330','change', ()=>pushLiveNow(true));
+  on('f_new330','change', ()=>{ pushLiveNow(true); persistSupDraft(); });
   on('f_new200','input', ()=>{ supRecord.newCartons200 = Number(document.getElementById('f_new200').value)||0; supRecord.newCartons = (supRecord.newCartons330||0)+(supRecord.newCartons200||0); updateStats(); });
-  on('f_new200','change', ()=>pushLiveNow(true));
+  on('f_new200','change', ()=>{ pushLiveNow(true); persistSupDraft(); });
   on('f_qtyReceived330','input', ()=>{ supRecord.qtyReceived330 = Number(document.getElementById('f_qtyReceived330').value)||0; supRecord.qtyReceived = (supRecord.qtyReceived330||0)+(supRecord.qtyReceived200||0); updateStats(); });
-  on('f_qtyReceived330','change', ()=>pushLiveNow(false));
+  on('f_qtyReceived330','change', ()=>{ pushLiveNow(false); persistSupDraft(); });
   on('f_qtyReceived200','input', ()=>{ supRecord.qtyReceived200 = Number(document.getElementById('f_qtyReceived200').value)||0; supRecord.qtyReceived = (supRecord.qtyReceived330||0)+(supRecord.qtyReceived200||0); updateStats(); });
-  on('f_qtyReceived200','change', ()=>pushLiveNow(false));
+  on('f_qtyReceived200','change', ()=>{ pushLiveNow(false); persistSupDraft(); });
   on('f_tankerTime','input', ()=>{ supRecord.tankerArrival = document.getElementById('f_tankerTime').value||''; });
-  on('f_tankerTime','change', ()=>pushLiveNow(false));
+  on('f_tankerTime','change', ()=>{ pushLiveNow(false); persistSupDraft(); });
   on('f_tankerCount','input', ()=>{ supRecord.tankerCount = Number(document.getElementById('f_tankerCount').value)||0; });
-  on('f_tankerCount','change', ()=>pushLiveNow(false));
-  on('f_tankerTimeReset','click', ()=>{ const el=document.getElementById('f_tankerTime'); if(el) el.value=''; supRecord.tankerArrival=''; pushLiveNow(false); });
-  on('f_distStartReset','click', ()=>{ const el=document.getElementById('f_distStart'); if(el) el.value=''; supRecord.distributionStart=''; });
-  on('f_distEndReset','click', ()=>{ const el=document.getElementById('f_distEnd'); if(el) el.value=''; supRecord.distributionEnd=''; });
+  on('f_tankerCount','change', ()=>{ pushLiveNow(false); persistSupDraft(); });
+  on('f_tankerTimeReset','click', ()=>{ const el=document.getElementById('f_tankerTime'); if(el) el.value=''; supRecord.tankerArrival=''; pushLiveNow(false); persistSupDraft(); });
+  on('f_distStart','change', ()=>{ supRecord.distributionStart = document.getElementById('f_distStart').value||''; persistSupDraft(); });
+  on('f_distEnd','change', ()=>{ supRecord.distributionEnd = document.getElementById('f_distEnd').value||''; persistSupDraft(); });
+  on('f_distStartReset','click', ()=>{ const el=document.getElementById('f_distStart'); if(el) el.value=''; supRecord.distributionStart=''; persistSupDraft(); });
+  on('f_distEndReset','click', ()=>{ const el=document.getElementById('f_distEnd'); if(el) el.value=''; supRecord.distributionEnd=''; persistSupDraft(); });
   on('addWithdrawBtn','click', async ()=>{ supRecord.withdrawals.push({id:'w_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), note:'', qty:0, unit:'carton', rawQty:0, createdBy:state.currentUser.id, createdByName:state.currentUser.name, time:nowTime12()}); renderWithdrawList(); updateStats(); await persistSupWithdrawals(); });
   on('addTankerWithdrawBtn','click', async ()=>{ if(!supRecord.tankerWithdrawals) supRecord.tankerWithdrawals=[]; supRecord.tankerWithdrawals.push({id:'w_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), note:'', qty:0, unit:'carton', rawQty:0, createdBy:state.currentUser.id, createdByName:state.currentUser.name, time:nowTime12()}); renderTankerWithdrawList(); updateStats(); await persistSupWithdrawals(true); });
 
@@ -8758,6 +8760,11 @@ async function renderSupervisorMain(){
   renderAttendanceEditable(mosqueId);
   renderWorkHours();
   renderColdnessRow();
+  const notesEl = document.getElementById('f_notes');
+  if(notesEl) notesEl.addEventListener('change', ()=>{
+    supRecord.notes = notesEl.value;
+    persistSupDraft();
+  });
   const resetBtn = document.getElementById('resetAttendanceBtn');
   if(resetBtn) resetBtn.addEventListener('click', ()=>{
     if(!confirm('سيتم مسح تحضير جميع المتعاونين لهذا اليوم بالكامل، بما فيه من تم تحضيرهم بعلامة صح. هل أنت متأكد؟')) return;
@@ -9219,6 +9226,21 @@ async function persistSupDraft(){
   latest.attendanceTimestamps = supRecord.attendanceTimestamps;
   latest.workTimes = supRecord.workTimes;
   latest.customAttendanceStats = supRecord.customAttendanceStats;
+  latest.waterColdness = supRecord.waterColdness;
+  latest.notes = supRecord.notes;
+  latest.openingStock330 = supRecord.openingStock330;
+  latest.openingStock200 = supRecord.openingStock200;
+  latest.openingStock = supRecord.openingStock;
+  latest.newCartons330 = supRecord.newCartons330;
+  latest.newCartons200 = supRecord.newCartons200;
+  latest.newCartons = supRecord.newCartons;
+  latest.qtyReceived330 = supRecord.qtyReceived330;
+  latest.qtyReceived200 = supRecord.qtyReceived200;
+  latest.qtyReceived = supRecord.qtyReceived;
+  latest.tankerArrival = supRecord.tankerArrival;
+  latest.tankerCount = supRecord.tankerCount;
+  latest.distributionStart = supRecord.distributionStart;
+  latest.distributionEnd = supRecord.distributionEnd;
   await storageSet(recKey(mosqueId, state.supDate), JSON.stringify(latest));
 }
 function nowTime12raw(){
@@ -9593,6 +9615,7 @@ function renderColdnessRow(){
   wrap.innerHTML = `<input type="number" step="0.1" class="input" id="coldnessInput" style="max-width:150px" value="${supRecord.waterColdness||''}" placeholder="مثال: 4">`;
   document.getElementById('coldnessInput').addEventListener('change', e=>{
     supRecord.waterColdness = e.target.value;
+    persistSupDraft();
   });
 }
 function attStateBtn(collabId, kind, current, locked){
