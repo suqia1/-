@@ -2,9 +2,17 @@
 <html lang="ar" dir="rtl">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="color-scheme" content="light only">
-<title>ضيف المدينة · نظام إدارة توزيع مياه المساجد</title>
+<meta name="theme-color" content="#17256E">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" id="pwaAppleTitle" content="ضيف المدينة">
+<link rel="manifest" id="pwaManifestLink">
+<link rel="apple-touch-icon" id="pwaAppleIcon">
+<link rel="icon" id="pwaFavicon">
+<title id="pwaPageTitle">ضيف المدينة · نظام إدارة توزيع مياه المساجد</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -473,8 +481,8 @@ let state = {
   demoHintText: 'حسابات تجريبية:\nالإدارة: admin / admin123\nمشرف قباء: quba_sup / 1234 · مشرف الميقات: miqat_sup / 1234 · مشرف القبلتين: qiblatain_sup / 1234',
   adminTab: 'users',
   attendLogMonth: null,
-  sidebarLabels: {users:'المستخدمون والمشرفون', collabs:'المتعاونون', reports:'المتابعة والتقارير', livereports:'التقارير مباشر', attendlog:'جدول الحضور والغياب', online:'المتصلون الآن', supplier:'المورد', supplierorder:'طلب عبوات للثلاجة', monthly:'الكراتين الموزعة', cartons330:'الكراتين الموزعة لعبوات 330مل', cartons200:'الكراتين الموزعة لعبوات 200مل', indicator:'مؤشر الثلاجة', private:'معلومات خاصة', approvereports:'اعتماد التقارير اليومية', supplierlog:'سجل المورد', warehouseadmin:'المستودع', driveradmin:'سائق ناقلات الماء', photos:'الصور'},
-  sidebarOrder: ['users','collabs','reports','livereports','attendlog','online','supplier','supplierlog','warehouseadmin','driveradmin','monthly','cartons330','cartons200','indicator','photos','private'],
+  sidebarLabels: {users:'المستخدمون والمشرفون', collabs:'المتعاونون', reports:'المتابعة والتقارير', livereports:'التقارير مباشر', attendlog:'جدول الحضور والغياب', online:'المتصلون الآن', supplier:'المورد', supplierorder:'طلب عبوات للثلاجة', monthly:'الكراتين الموزعة', cartons330:'الكراتين الموزعة لعبوات 330مل', cartons200:'الكراتين الموزعة لعبوات 200مل', indicator:'مؤشر الثلاجة', private:'معلومات خاصة', approvereports:'اعتماد التقارير اليومية', supplierlog:'سجل المورد', warehouseadmin:'المستودع', driveradmin:'سائق ناقلات الماء', photos:'الصور', datamanage:'حفظ الجداول وحذفها'},
+  sidebarOrder: ['users','collabs','reports','livereports','attendlog','online','supplier','supplierlog','warehouseadmin','driveradmin','monthly','cartons330','cartons200','indicator','photos','private','datamanage'],
   presenceHidden: {},
   notifCounters: {},
   notifSeenCounters: {},
@@ -558,7 +566,7 @@ function hijriDate(dateStr){
   const [y,m,d] = dateStr.split('-').map(Number);
   const dt = new Date(y,m-1,d);
   try{
-    return toEnglishDigits(new Intl.DateTimeFormat('ar-SA-u-ca-islamic-nu-latn',{year:'numeric',month:'long',day:'numeric'}).format(dt));
+    return toEnglishDigits(new Intl.DateTimeFormat('ar-SA-u-ca-islamic-umalqura-nu-latn',{year:'numeric',month:'long',day:'numeric'}).format(dt));
   }catch(e){ return ''; }
 }
 function formatTime12(t){
@@ -642,8 +650,8 @@ function driverKey(driverId,mosqueId,date){ return `skq_driverrec__${driverId}__
 function driverSummaryKey(driverId,date){ return `skq_driversummary__${driverId}__${date}`; }
 
 /* ============ SEED ============ */
-async function ensureSeed(){
-  let usersRaw = await storageGet('skq_users');
+async function loadUsers(){
+  const usersRaw = await storageGet('skq_users');
   if(!usersRaw){
     const defaultUsers = [
       {id:'u_admin', username:'admin', password:'admin123', role:'admin', name:'مدير النظام', mosqueId:null, active:true},
@@ -651,9 +659,14 @@ async function ensureSeed(){
       {id:'u_miqat', username:'miqat_sup', password:'1234', role:'supervisor', name:'مشرف مسجد الميقات', mosqueId:'miqat', active:true},
       {id:'u_qiblatain', username:'qiblatain_sup', password:'1234', role:'supervisor', name:'مشرف مسجد القبلتين', mosqueId:'qiblatain', active:true},
     ];
+    state.users = defaultUsers;
     await storageSet('skq_users', JSON.stringify(defaultUsers));
+    return;
   }
-  let collabRaw = await storageGet('skq_collaborators');
+  state.users = safeParse(usersRaw, []);
+}
+async function loadCollaborators(){
+  const collabRaw = await storageGet('skq_collaborators');
   if(!collabRaw){
     const defaultCollabs = [
       {id:'c1', name:'محمد العتيبي', mosqueId:'quba'},
@@ -663,11 +676,12 @@ async function ensureSeed(){
       {id:'c5', name:'عبدالله القرني', mosqueId:'qiblatain'},
       {id:'c6', name:'ياسر الغامدي', mosqueId:'qiblatain'},
     ];
+    state.collaborators = defaultCollabs;
     await storageSet('skq_collaborators', JSON.stringify(defaultCollabs));
+    return;
   }
+  state.collaborators = safeParse(collabRaw, []);
 }
-async function loadUsers(){ state.users = safeParse(await storageGet('skq_users'), []); }
-async function loadCollaborators(){ state.collaborators = safeParse(await storageGet('skq_collaborators'), []); }
 async function loadLogo(){ const v = await storageGet('skq_logo'); if(v) state.logo = v; }
 async function loadReportBackgrounds(){
   const raw = await storageGet('skq_reportbgs');
@@ -690,13 +704,11 @@ async function loadPdfOrientations(){
 }
 async function savePdfOrientations(){ return await storageSet('skq_pdforientations', JSON.stringify(state.pdfOrientations)); }
 async function loadPdfSizing(){
-  const rawV = await storageGet('skq_pdfvoffset2');
+  const [rawV, rawH, rawW] = await Promise.all([storageGet('skq_pdfvoffset2'), storageGet('skq_pdfheightpct'), storageGet('skq_pdfwidthpct')]);
   const parsedV = safeParse(rawV, null);
   if(parsedV && typeof parsedV==='object') Object.assign(state.pdfVOffset, parsedV);
-  const rawH = await storageGet('skq_pdfheightpct');
   const parsedH = safeParse(rawH, null);
   if(parsedH && typeof parsedH==='object') Object.assign(state.pdfHeightPct, parsedH);
-  const rawW = await storageGet('skq_pdfwidthpct');
   const parsedW = safeParse(rawW, null);
   if(parsedW && typeof parsedW==='object') Object.assign(state.pdfWidthPct, parsedW);
 }
@@ -710,10 +722,9 @@ async function loadBgModeLabels(){
 }
 async function saveBgModeLabels(){ return await storageSet('skq_bgmodelabels', JSON.stringify(state.bgModeLabels)); }
 async function loadModePillLabels(){
-  const rawM = await storageGet('skq_monthlymodelabels');
+  const [rawM, rawI] = await Promise.all([storageGet('skq_monthlymodelabels'), storageGet('skq_indicatormodelabels')]);
   const parsedM = safeParse(rawM, null);
   if(parsedM && typeof parsedM==='object') Object.assign(state.monthlyModeLabels, parsedM);
-  const rawI = await storageGet('skq_indicatormodelabels');
   const parsedI = safeParse(rawI, null);
   if(parsedI && typeof parsedI==='object') Object.assign(state.indicatorModeLabels, parsedI);
 }
@@ -810,23 +821,20 @@ function notifTotalUnread(){
   return Object.keys(state.notifCounters).filter(k=>k!=='private' && !k.includes('__')).reduce((s,k)=>s+notifUnreadCount(k),0);
 }
 async function loadPresenceSettings(){
-  const rawHidden = await storageGet('skq_presencehidden');
+  const [rawHidden, rawSite] = await Promise.all([storageGet('skq_presencehidden'), storageGet('skq_presencesitetoggle')]);
   const parsedHidden = safeParse(rawHidden, null);
   if(parsedHidden && typeof parsedHidden==='object') state.presenceHidden = parsedHidden;
-  const rawSite = await storageGet('skq_presencesitetoggle');
   const parsedSite = safeParse(rawSite, null);
   if(parsedSite && typeof parsedSite==='object') state.presenceSiteToggle = parsedSite;
 }
 async function savePresenceHidden(){ return await storageSet('skq_presencehidden', JSON.stringify(state.presenceHidden)); }
 async function savePresenceSiteToggle(){ return await storageSet('skq_presencesitetoggle', JSON.stringify(state.presenceSiteToggle)); }
 async function loadAttendLog(){
-  const rawRoster = await storageGet('skq_attendlogroster');
+  const [rawRoster, rawData, rawLabels] = await Promise.all([storageGet('skq_attendlogroster'), storageGet('skq_attendlogdata'), storageGet('skq_attendloglabels')]);
   const parsedRoster = safeParse(rawRoster, null);
   if(parsedRoster && typeof parsedRoster==='object') state.attendLogRoster = parsedRoster;
-  const rawData = await storageGet('skq_attendlogdata');
   const parsedData = safeParse(rawData, null);
   if(parsedData && typeof parsedData==='object') state.attendLogData = parsedData;
-  const rawLabels = await storageGet('skq_attendloglabels');
   const parsedLabels = safeParse(rawLabels, null);
   if(parsedLabels && typeof parsedLabels==='object') Object.assign(state.attendLogLabels, parsedLabels);
 }
@@ -834,10 +842,9 @@ async function saveAttendLogRoster(){ return await storageSet('skq_attendlogrost
 async function saveAttendLogData(){ return await storageSet('skq_attendlogdata', JSON.stringify(state.attendLogData)); }
 async function saveAttendLogLabels(){ return await storageSet('skq_attendloglabels', JSON.stringify(state.attendLogLabels)); }
 async function loadMonthlyOrderLabels(){
-  const rawOrder = await storageGet('skq_monthlyorder');
+  const [rawOrder, rawLabels] = await Promise.all([storageGet('skq_monthlyorder'), storageGet('skq_monthlylabels')]);
   const parsedOrder = safeParse(rawOrder, null);
   if(parsedOrder && Array.isArray(parsedOrder)) state.monthlyMosqueOrder = parsedOrder;
-  const rawLabels = await storageGet('skq_monthlylabels');
   const parsedLabels = safeParse(rawLabels, null);
   if(parsedLabels && typeof parsedLabels==='object'){
     ['sourceRow','tankerRow'].forEach(k=>{
@@ -906,7 +913,7 @@ async function loadIndicatorLabels(){
 }
 async function saveIndicatorLabels(){ return await storageSet('skq_indicatorlabels', JSON.stringify(state.indicatorLabels)); }
 async function loadCollabLabels(){
-  const raw = await storageGet('skq_collablabels');
+  const [raw, rawHidden] = await Promise.all([storageGet('skq_collablabels'), storageGet('skq_collabcounthidden')]);
   const parsed = safeParse(raw, null);
   if(parsed && typeof parsed==='object') state.collabLabels = Object.assign({}, state.collabLabels, parsed);
   if(!state.collabLabels.noSiteLabel) state.collabLabels.noSiteLabel = 'بدون موقع';
@@ -920,7 +927,6 @@ async function loadCollabLabels(){
     const idIdx = state.collabLabels.customColumns.findIndex(c=>c.id==='col_national_id');
     state.collabLabels.customColumns.splice(idIdx+1, 0, {id:'col_job_title', label:'المسمى الوظيفي', core:true, type:'select'});
   }
-  const rawHidden = await storageGet('skq_collabcounthidden');
   const parsedHidden = safeParse(rawHidden, null);
   if(parsedHidden && typeof parsedHidden==='object') state.collabCountHidden = parsedHidden;
 }
@@ -1108,8 +1114,9 @@ async function computeDriverDayTotals(driverId, date){
   const sites = activeMosques();
   let returned = 0, delivered = 0, returned330 = 0, returned200 = 0, delivered330 = 0, delivered200 = 0;
   const returnEntries = [];
-  for(const m of sites){
-    const r = await loadDriverRecord(driverId, m.id, date);
+  const driverRecs = await Promise.all(sites.map(m=>loadDriverRecord(driverId, m.id, date)));
+  sites.forEach((m,i)=>{
+    const r = driverRecs[i];
     const q = Number(r.returnQty)||0;
     const q330 = Number(r.returnQty330)||0, q200 = Number(r.returnQty200)||0;
     const dq = Number(r.deliveredQty)||0;
@@ -1117,7 +1124,7 @@ async function computeDriverDayTotals(driverId, date){
     delivered += dq; delivered330 += Number(r.deliveredQty330)||0; delivered200 += Number(r.deliveredQty200)||0;
     if(q330>0) returnEntries.push({siteName:m.name, qty:q330, bottleSize:'330', time:r.returnTime||''});
     if(q200>0) returnEntries.push({siteName:m.name, qty:q200, bottleSize:'200', time:r.returnTime||''});
-  }
+  });
   return {supplied, supplied330, supplied200, returned, returned330, returned200, delivered, delivered330, delivered200, net: delivered-returned, net330: delivered330-returned330, net200: delivered200-returned200, supplyEntries, returnEntries};
 }
 function driverTotalsCardHTML(t){
@@ -1277,11 +1284,65 @@ const app = document.getElementById('app');
   document.addEventListener('keydown', e=>{ if(e.key==='Escape' && overlay.classList.contains('open')) close(); });
 })();
 
+function resizeImageToSquarePng(dataUrl, size){
+  return new Promise((resolve, reject)=>{
+    const img = new Image();
+    img.onload = ()=>{
+      const canvas = document.createElement('canvas');
+      canvas.width = size; canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0,0,size,size);
+      const scale = Math.min(size/img.width, size/img.height);
+      const w = img.width*scale, h = img.height*scale;
+      ctx.drawImage(img, (size-w)/2, (size-h)/2, w, h);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
+/* يبني بطاقة PWA (الأيقونة + الاسم) من شعار الموقع واسمه الحاليين مباشرة، فتتحدث تلقائيًا في كل مرة يُفتح فيها الموقع بلا حاجة لإعادة نشر أي ملف */
+async function setupPWA(){
+  try{
+    const appleTitleEl = document.getElementById('pwaAppleTitle');
+    if(appleTitleEl) appleTitleEl.setAttribute('content', state.siteName);
+    const pageTitleEl = document.getElementById('pwaPageTitle');
+    if(pageTitleEl) pageTitleEl.textContent = state.siteName + ' · نظام إدارة توزيع مياه المساجد';
+    const icon192 = await resizeImageToSquarePng(state.logo, 192);
+    const icon512 = await resizeImageToSquarePng(state.logo, 512);
+    const appleIconEl = document.getElementById('pwaAppleIcon');
+    if(appleIconEl) appleIconEl.setAttribute('href', icon192);
+    const faviconEl = document.getElementById('pwaFavicon');
+    if(faviconEl) faviconEl.setAttribute('href', icon192);
+    const manifest = {
+      name: state.siteName,
+      short_name: state.siteName,
+      start_url: './',
+      scope: './',
+      display: 'standalone',
+      orientation: 'portrait',
+      background_color: '#ffffff',
+      theme_color: '#17256E',
+      icons: [
+        {src: icon192, sizes:'192x192', type:'image/png'},
+        {src: icon512, sizes:'512x512', type:'image/png'},
+      ],
+    };
+    const blob = new Blob([JSON.stringify(manifest)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const manifestEl = document.getElementById('pwaManifestLink');
+    if(manifestEl) manifestEl.setAttribute('href', url);
+    if('serviceWorker' in navigator){
+      navigator.serviceWorker.register('./sw.js').catch(()=>{}); // يُهمَل بصمت إن لم يكن ملف sw.js مرفوعًا بعد على نفس الاستضافة
+    }
+  }catch(e){ /* تجاهل أي خطأ هنا حتى لا يتعطل تحميل الموقع نفسه بسببه */ }
+}
 async function boot(){
   app.innerHTML = `<div class="login-shell"><div class="col" style="align-items:center;gap:10px;color:#8a8377"><div>جارٍ التحميل…</div></div></div>`;
-  await ensureSeed();
   await Promise.all([loadUsers(), loadCollaborators(), loadLogo(), loadMosques(), loadSiteName(), loadSiteSubtitle(), loadShowDemoHint(), loadDemoHintText(), loadReportBackgrounds(), loadPdfOrientations(), loadPdfSizing(), loadFormConfigs(), loadSidebarLabels(), loadSidebarOrder(), loadMonthlyOrderLabels(), loadIndicatorLabels(), loadCollabLabels(), loadBgModeLabels(), loadModePillLabels(), loadRoleLabels(), loadReportHeaderConfig(), loadMonthlyColumnLabels(), loadMonthlyTableVisibility(), loadAttendLog(), loadPresenceSettings(), loadPendingCollaborators(), loadGsSidebarOrder(), loadNotifCounters(), loadSupplierOrderLabels(), loadSupplierAccountLabels(), loadWarehouseLabels(), loadDriverLabels()]);
   document.title = state.siteName + ' · نظام إدارة توزيع مياه المساجد';
+  setupPWA();
   renderLogin();
   setInterval(async ()=>{
     const t = todayStr();
@@ -1548,7 +1609,1273 @@ function renderAdminMain(){
   if(state.adminTab==='indicator') return renderAdminIndicator(main);
   if(state.adminTab==='photos') return renderGsPhotosPage(main);
   if(state.adminTab==='private') return renderAdminPrivateInfo(main);
+  if(state.adminTab==='datamanage') return renderAdminDataManage(main);
 }
+
+/* ============ حفظ الجداول وحذفها (DATA MANAGE) ============ */
+const DATA_MANAGE_RECORD_FIELDS = {
+  reports: ['notes','notesPhoto','receipt','entryPhoto','exitPhoto','fridgePhoto','actionPoints','openingStock','openingStock330','openingStock200','newCartons','newCartons330','newCartons200','tankerArrival','tankerCount','qtyReceived','qtyReceived330','qtyReceived200','distributionStart','distributionEnd','savedAt','gsApproved','gsApprovedAt','gsApprovedBy'],
+  attendlog: ['attendance','attendanceNotes','attendanceTimestamps','workTimes','customAttendanceStats'],
+  supplier: ['supplierArrivalTime','supplierOrderReceived','supplierOrderReceivedTime','supplierDeliveredQty','supplierDeliveredQty330','supplierDeliveredQty200','supplierReceiptPhoto','supplierOrderConfirmed','supplierExecutedTime','supplierManualAdd','supplierShortfallCounted','orderClaimedQty','orderRequestedQty','orderRequestedQty200','orderRequestedQty330','orderClaimedDays','orderCancelled','pendingManualQty','pendingManualQty200','pendingManualQty330','orderPendingGsApproval','orderRequestedTime','orderApprovedTime','supplierRecordSaved','supplierRecordSavedAt'],
+  indicator: ['waterColdness'],
+};
+function dataManageCartonSize(key){ return key==='cartons330' ? '330' : key==='cartons200' ? '200' : 'all'; }
+
+/* ---------- تنزيل كملفات Word / Excel حقيقية بدل JSON ---------- */
+function dmDocShell(bodyHtml, landscape){
+  const pageSize = landscape ? '29.7cm 21cm' : '21cm 29.7cm';
+  return `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+  <head><meta charset="UTF-8"><style>
+    @page Section1 {size:${pageSize}; margin:1.5cm;}
+    div.Section1 {page:Section1;}
+    body{font-family:Arial, Tahoma, sans-serif; direction:rtl; font-size:13px;}
+    table{border-collapse:collapse;width:100%;margin-bottom:14px;}
+    th,td{border:1px solid #999;padding:5px 8px;text-align:right;}
+    th{background:#17256E;color:#fff;}
+    h1,h2,h3{color:#17256E;margin:6px 0}
+    .pgbreak{page-break-before:always;}
+    img{max-width:220px;border-radius:6px;display:block;margin:4px 0}
+  </style></head><body><div class="Section1">${bodyHtml}</div></body></html>`;
+}
+function downloadAsWord(filename, bodyHtml, landscape){
+  const blob = new Blob(['\ufeff', dmDocShell(bodyHtml, landscape)], {type:'application/msword'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename.endsWith('.doc') ? filename : filename+'.doc';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 4000);
+}
+function downloadAsExcel(filename, bodyHtml){
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+    <head><meta charset="UTF-8"></head><body dir="rtl">${bodyHtml}</body></html>`;
+  const blob = new Blob(['\ufeff', html], {type:'application/vnd.ms-excel'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename.endsWith('.xls') ? filename : filename+'.xls';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 4000);
+}
+/* ---------- بناء نفس رسم مؤشر الثلاجة (الخط البياني) الحقيقي وتحويله لصورة PNG لإدراجه داخل ملف Word — بنفس شكله في الصفحة وتصدير PDF تمامًا ---------- */
+function buildIndicatorChartSVGString(rangeMosques, days){
+  const W = 900, H = 380, padL = 20, padR = 46, padT = 20, padB = 40;
+  const chartW = W - padL - padR, chartH = H - padT - padB;
+  const rawMax = Math.max(1, ...days.map(d=>Math.max(...rangeMosques.map(m=>d.values[m.id]))));
+  const step = 50;
+  const maxVal = Math.max(step, Math.ceil(rawMax/step)*step);
+  const n = days.length;
+  const xFor = i => n<=1 ? padL : padL + (i/(n-1))*chartW;
+  const yFor = v => padT + chartH - (v/maxVal)*chartH;
+  const yTicks = [];
+  for(let v=0; v<=maxVal; v+=step) yTicks.push(v);
+  const yAxisHTML = yTicks.map(v=>`
+    <line x1="${padL}" y1="${yFor(v)}" x2="${padL+chartW}" y2="${yFor(v)}" stroke="#F1ECE0" stroke-width="1"/>
+    <text x="${padL+chartW+8}" y="${yFor(v)+3}" font-size="10" fill="#8a8377" text-anchor="start">${v}</text>`).join('');
+  const labelEvery = Math.max(1, Math.ceil(n/8));
+  const xLabels = days.map((d,i)=> i%labelEvery===0 || i===n-1 ? `
+    <text x="${xFor(i)}" y="${H-14}" font-size="11" fill="#8a8377" text-anchor="middle">${d.date.slice(8,10)}/${d.date.slice(5,7)}</text>` : '').join('');
+  const lines = rangeMosques.map(m=>{
+    const values = days.map(d=>d.values[m.id]);
+    const pts = values.map((v,i)=>`${xFor(i)},${yFor(v)}`).join(' ');
+    return `<polyline points="${pts}" fill="none" stroke="${m.color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  }).join('');
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
+    <rect x="0" y="0" width="${W}" height="${H}" fill="#ffffff"/>
+    ${yAxisHTML}
+    <line x1="${padL}" y1="${padT+chartH}" x2="${padL+chartW}" y2="${padT+chartH}" stroke="#DED4BC" stroke-width="1"/>
+    ${xLabels}
+    ${lines}
+  </svg>`;
+}
+function svgStringToPngDataUrl(svgString, width, height){
+  return new Promise((resolve, reject)=>{
+    try{
+      const scale = 2; // دقة أعلى للطباعة
+      const svg64 = btoa(unescape(encodeURIComponent(svgString)));
+      const img = new Image();
+      img.onload = ()=>{
+        const canvas = document.createElement('canvas');
+        canvas.width = width*scale; canvas.height = height*scale;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/png'));
+      };
+      img.onerror = reject;
+      img.src = 'data:image/svg+xml;base64,' + svg64;
+    }catch(e){ reject(e); }
+  });
+}
+async function indicatorChartImageHTML(rangeMosques, days, widthPx){
+  const svgStr = buildIndicatorChartSVGString(rangeMosques, days);
+  try{
+    const png = await svgStringToPngDataUrl(svgStr, 900, 380);
+    return `<img src="${png}" width="${widthPx||650}" style="width:${widthPx||650}px;display:block;margin:0 auto 12px">`;
+  }catch(e){ return ''; } // إن تعذّر توليد الصورة لأي سبب، يتجاهلها بصمت ويكمل بباقي المستند
+}
+function indicatorChartLegendHTML(rangeMosques){
+  return `<div style="text-align:center;margin-bottom:14px">${rangeMosques.map(m=>`
+    <span style="display:inline-block;margin:0 10px"><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:${m.color};margin-left:5px;vertical-align:middle"></span>${m.name}</span>`).join('')}</div>`;
+}
+/* يبني مصفوفة days بنفس شكل loadAndRenderIndicator (values/values330/values200 لكل موقع لكل يوم) لفترة شهر أو ربع معيّن */
+async function buildIndicatorDaysData(months, rangeMosques){
+  const days = [];
+  for(const yyyymm of months){
+    const data = await loadMonthData(yyyymm, rangeMosques);
+    const total = daysInMonth(yyyymm);
+    for(let d=1; d<=total; d++){
+      const dateStr = monthDateStr(yyyymm, d);
+      const values = {}, values330 = {}, values200 = {};
+      rangeMosques.forEach(mm=>{
+        const rec = data[mm.id] ? data[mm.id][dateStr] : null;
+        values[mm.id] = totalDistributedFromRecord(rec);
+        values330[mm.id] = cartonsForRecordBySize(rec, '330');
+        values200[mm.id] = cartonsForRecordBySize(rec, '200');
+      });
+      days.push({date: dateStr, values, values330, values200});
+    }
+  }
+  return days;
+}
+
+async function scanKeysByPrefix(prefix){
+  const viaSb = await storageGetPrefix(prefix);
+  if(viaSb) return viaSb;
+  const result = {};
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const lk = localStorage.key(i);
+      if(lk && lk.indexOf('saqya::'+prefix)===0) result[lk.slice(7)] = localStorage.getItem(lk);
+    }
+  }catch(e){}
+  return result;
+}
+let dmCache = {}; // يحفظ نتائج المسح والأرشيف مؤقتًا أثناء تصفح صفحة "حفظ الجداول وحذفها" حتى لا تُعاد قراءة كامل السجل من الخادم مع كل قائمة تُفتح
+async function scanAllRecordDates(){
+  if(dmCache.records) return dmCache.records;
+  const map = await scanKeysByPrefix('skq_record__');
+  const out = [];
+  Object.keys(map).forEach(k=>{
+    const rest = k.slice('skq_record__'.length);
+    const parts = rest.split('__');
+    if(parts.length<2) return;
+    const mosqueId = parts[0], date = parts[1];
+    const m = mosqueById(mosqueId);
+    out.push({mosqueId, mosqueName: m?m.name:mosqueId, date, month:date.slice(0,7)});
+  });
+  dmCache.records = out;
+  return out;
+}
+async function scanAllWarehouseDates(){
+  if(dmCache.warehouse) return dmCache.warehouse;
+  const map = await scanKeysByPrefix('skq_warehouse__');
+  const out = [];
+  Object.keys(map).forEach(k=>{
+    const date = k.slice('skq_warehouse__'.length);
+    out.push({date, month:date.slice(0,7)});
+  });
+  dmCache.warehouse = out;
+  return out;
+}
+async function scanAllDriverDates(){
+  if(dmCache.driver) return dmCache.driver;
+  const map = await scanKeysByPrefix('skq_driversummary__');
+  const out = [];
+  Object.keys(map).forEach(k=>{
+    const rest = k.slice('skq_driversummary__'.length);
+    const parts = rest.split('__');
+    if(parts.length<2) return;
+    const driverId = parts[0], date = parts[1];
+    const u = state.users.find(x=>x.id===driverId);
+    out.push({driverId, driverName: u?u.name:driverId, date, month:date.slice(0,7)});
+  });
+  dmCache.driver = out;
+  return out;
+}
+function groupByMosqueMonth(items){
+  const groups = {};
+  items.forEach(it=>{
+    const gk = `${it.mosqueId}__${it.month}`;
+    if(!groups[gk]) groups[gk] = {mosqueId:it.mosqueId, mosqueName:it.mosqueName, month:it.month, items:[]};
+    groups[gk].items.push(it);
+  });
+  Object.values(groups).forEach(g=>g.items.sort((a,b)=> a.date<b.date?-1:a.date>b.date?1:0));
+  return Object.values(groups).sort((a,b)=> a.mosqueName===b.mosqueName ? (a.month<b.month?1:-1) : a.mosqueName.localeCompare(b.mosqueName,'ar'));
+}
+function groupByMonth(items){
+  const groups = {};
+  items.forEach(it=>{
+    if(!groups[it.month]) groups[it.month] = {month:it.month, items:[]};
+    groups[it.month].items.push(it);
+  });
+  Object.values(groups).forEach(g=>g.items.sort((a,b)=> a.date<b.date?-1:a.date>b.date?1:0));
+  return Object.values(groups).sort((a,b)=> a.month<b.month?1:-1);
+}
+function groupByDriverMonth(items){
+  const groups = {};
+  items.forEach(it=>{
+    const gk = `${it.driverId}__${it.month}`;
+    if(!groups[gk]) groups[gk] = {driverId:it.driverId, driverName:it.driverName, month:it.month, items:[]};
+    groups[gk].items.push(it);
+  });
+  Object.values(groups).forEach(g=>g.items.sort((a,b)=> a.date<b.date?-1:a.date>b.date?1:0));
+  return Object.values(groups).sort((a,b)=> a.driverName===b.driverName ? (a.month<b.month?1:-1) : a.driverName.localeCompare(b.driverName,'ar'));
+}
+
+/* ---------- أرشيف الكراتين (كما كان — إجمالي محذوف يبقى محسوبًا في الربع/النصف/السنوي) ---------- */
+async function loadCartonsArchive(){ if(dmCache.cartonsArchive) return dmCache.cartonsArchive; dmCache.cartonsArchive = safeParse(await storageGet('skq_cartons_archive'), {}); return dmCache.cartonsArchive; }
+async function saveCartonsArchive(arc){ return await storageSet('skq_cartons_archive', JSON.stringify(arc)); }
+function archiveEntryFor(arc, mosqueId, yyyymm){
+  if(!arc[mosqueId]) arc[mosqueId] = {};
+  if(!arc[mosqueId][yyyymm]) arc[mosqueId][yyyymm] = {fridge330:0, fridge200:0, tanker330:0, tanker200:0};
+  return arc[mosqueId][yyyymm];
+}
+async function archiveCartonsBeforeDelete(items, sizeScope){
+  const arc = await loadCartonsArchive();
+  for(const it of items){
+    const rec = await loadRecord(it.mosqueId, it.date);
+    const entry = archiveEntryFor(arc, it.mosqueId, it.month);
+    (rec.withdrawals||[]).forEach(w=>{
+      const size = w.bottleSize||'330';
+      if(sizeScope!=='all' && sizeScope!==size) return;
+      entry[size==='200'?'fridge200':'fridge330'] += Number(w.qty)||0;
+    });
+    (rec.tankerWithdrawals||[]).forEach(w=>{
+      const size = w.bottleSize||'330';
+      if(sizeScope!=='all' && sizeScope!==size) return;
+      entry[size==='200'?'tanker200':'tanker330'] += Number(w.qty)||0;
+    });
+  }
+  await saveCartonsArchive(arc);
+}
+function archivedCartonsFor(arc, mosqueId, yyyymm, sizeFilter){
+  const e = (arc[mosqueId] && arc[mosqueId][yyyymm]) ? arc[mosqueId][yyyymm] : {fridge330:0,fridge200:0,tanker330:0,tanker200:0};
+  if(sizeFilter==='330') return {fridge:e.fridge330, tanker:e.tanker330};
+  if(sizeFilter==='200') return {fridge:e.fridge200, tanker:e.tanker200};
+  return {fridge:e.fridge330+e.fridge200, tanker:e.tanker330+e.tanker200};
+}
+
+/* ---------- أرشيف المورد (شهري) — يُحفظ عند حذف اليومي حتى لا تُفقد الكمية من السجل الشهري ---------- */
+async function loadSupplierArchive(){ if(dmCache.supplierArchive) return dmCache.supplierArchive; dmCache.supplierArchive = safeParse(await storageGet('skq_supplier_archive'), {}); return dmCache.supplierArchive; }
+async function saveSupplierArchive(arc){ return await storageSet('skq_supplier_archive', JSON.stringify(arc)); }
+function supplierArchiveEntry(arc, mosqueId, yyyymm){
+  if(!arc[mosqueId]) arc[mosqueId] = {};
+  if(!arc[mosqueId][yyyymm]) arc[mosqueId][yyyymm] = {requested:0,requested330:0,requested200:0,delivered:0,delivered330:0,delivered200:0};
+  return arc[mosqueId][yyyymm];
+}
+
+/* ---------- أرشيف مؤشر الثلاجة — دلوان مستقلان: شهري وربع سنوي ---------- */
+async function loadIndicatorArchive(){ if(dmCache.indicatorArchive) return dmCache.indicatorArchive; dmCache.indicatorArchive = safeParse(await storageGet('skq_indicator_archive'), {}); return dmCache.indicatorArchive; }
+async function saveIndicatorArchive(arc){ return await storageSet('skq_indicator_archive', JSON.stringify(arc)); }
+function indicatorArchiveEntry(arc, mosqueId, level, key){
+  if(!arc[mosqueId]) arc[mosqueId] = {};
+  if(!arc[mosqueId][level]) arc[mosqueId][level] = {};
+  if(!arc[mosqueId][level][key]) arc[mosqueId][level][key] = {sum:0, count:0};
+  return arc[mosqueId][level][key];
+}
+function quarterKeyOf(yyyymm){
+  const [y,m] = yyyymm.split('-').map(Number);
+  return `${y}-Q${Math.ceil(m/3)}`;
+}
+function monthsInQuarter(qkey){
+  const [y,qs] = qkey.split('-Q');
+  const startMonth = (Number(qs)-1)*3+1;
+  return [0,1,2].map(i=>`${y}-${String(startMonth+i).padStart(2,'0')}`);
+}
+function halfKeyOf(yyyymm){
+  const [y,m] = yyyymm.split('-').map(Number);
+  return `${y}-H${m<=6?1:2}`;
+}
+function monthsInHalf(hkey){
+  const [y,hs] = hkey.split('-H');
+  const startMonth = (Number(hs)-1)*6+1;
+  return Array.from({length:6},(_,i)=>`${y}-${String(startMonth+i).padStart(2,'0')}`);
+}
+function monthsInYear(year){
+  return Array.from({length:12},(_,i)=>`${year}-${String(i+1).padStart(2,'0')}`);
+}
+function quarterDisplayLabel(qkey){ const [y,qs]=qkey.split('-Q'); const names=['الأول','الثاني','الثالث','الرابع']; return `${y} — الربع ${names[Number(qs)-1]}`; }
+function halfDisplayLabel(hkey){ const [y,hs]=hkey.split('-H'); const names=['الأول','الثاني']; return `${y} — النصف ${names[Number(hs)-1]}`; }
+function monthsForPeriod(type, key){
+  if(type==='month') return [key];
+  if(type==='quarter') return monthsInQuarter(key);
+  if(type==='half') return monthsInHalf(key);
+  if(type==='year') return monthsInYear(key);
+  return [];
+}
+/* بيانات خام تطابق تمامًا ما تحسبه صفحة "الكراتين الموزعة" الحقيقية، لإعادة استخدام exportMonthlyExcel/exportRangeExcel الأصليتين بلا فروق */
+async function buildMonthlyExportData(yyyymm, monthMosques){
+  const total = daysInMonth(yyyymm);
+  const data = await loadMonthData(yyyymm, monthMosques);
+  const weeks = [];
+  for(let w=0; w<5; w++){ const days=[]; for(let i=0;i<7;i++) days.push(w*7+i+1); weeks.push(days); }
+  const weekLabels = ['الأسبوع الأول','الأسبوع الثاني','الأسبوع الثالث','الأسبوع الرابع','الأسبوع الخامس'];
+  function dayInfo(dayNum){ if(dayNum>total) return null; return monthDateStr(yyyymm, dayNum); }
+  function distributedFor(mosqueId, dateStr){ if(!dateStr) return 0; const rec = data[mosqueId][dateStr]; if(!rec || !rec.gsApproved) return 0; return monthlyDistributedFromRecord(rec); }
+  function packetsFor(mosqueId, dateStr){ if(!dateStr) return 0; const rec = data[mosqueId][dateStr]; if(!rec || !rec.gsApproved) return 0; if(state.monthlyBottleSizeFilter) return bottlesForRecordBySize(rec, state.monthlyBottleSizeFilter); return bottlesForRecordBySize(rec,'330')+bottlesForRecordBySize(rec,'200'); }
+  function withdrawnFor(mosqueId, dateStr){ if(!dateStr) return 0; const rec = data[mosqueId][dateStr]; if(!rec || !rec.withdrawals || !rec.gsApproved) return 0; if(state.monthlyBottleSizeFilter) return rec.withdrawals.filter(w=>(w.bottleSize||'330')===state.monthlyBottleSizeFilter).reduce((s,w)=>s+(Number(w.qty)||0),0); return rec.withdrawals.reduce((s,w)=>s+(Number(w.qty)||0),0); }
+  function tankerOnlyFor(mosqueId, dateStr){ if(!dateStr) return 0; const rec = data[mosqueId][dateStr]; if(!rec || !rec.gsApproved) return 0; if(state.monthlyBottleSizeFilter) return (rec.tankerWithdrawals||[]).filter(w=>(w.bottleSize||'330')===state.monthlyBottleSizeFilter).reduce((s,w)=>s+(Number(w.qty)||0),0); return Number(rec.qtyDistributed)||0; }
+  function fridgeBottlesFor(mosqueId, dateStr){ if(!dateStr) return 0; const rec = data[mosqueId][dateStr]; if(!rec || !rec.withdrawals || !rec.gsApproved) return 0; if(state.monthlyBottleSizeFilter) return rec.withdrawals.filter(w=>(w.bottleSize||'330')===state.monthlyBottleSizeFilter).reduce((s,w)=>s+bottlesForEntry(w),0); return rec.withdrawals.reduce((s,w)=>s+bottlesForEntry(w),0); }
+  function sourceLabel(dateStr){ if(!dateStr) return ''; let fridge=false, tanker=false; monthMosques.forEach(m=>{ const rec = data[m.id]?data[m.id][dateStr]:null; if(!rec||!rec.savedAt) return; if(withdrawnFor(m.id,dateStr)>0) fridge=true; if(tankerOnlyFor(m.id,dateStr)>0) tanker=true; }); const fName=state.monthlyLabels.fridgeSourceName, tName=state.monthlyLabels.tankerSourceName; if(fridge&&tanker) return `${fName} / ${tName}`; if(fridge) return fName; if(tanker) return tName; return ''; }
+  function tankerMosquesLabel(dateStr){ if(!dateStr) return ''; const names = monthMosques.filter(m=>{ const rec = data[m.id]?data[m.id][dateStr]:null; return rec&&rec.savedAt&&tankerOnlyFor(m.id,dateStr)>0; }).map(m=>m.name); return names.join(' و '); }
+
+  const weeklyTotals={}, monthlyTotals={}, weeklyPackets={}, monthlyPackets={};
+  monthMosques.forEach(m=>{ weeklyTotals[m.id]=[0,0,0,0,0]; monthlyTotals[m.id]=0; weeklyPackets[m.id]=[0,0,0,0,0]; monthlyPackets[m.id]=0; });
+  weeks.forEach((days,wIdx)=>{
+    monthMosques.forEach(m=>{
+      let weekCartons=0, weekPackets=0;
+      days.forEach(dayNum=>{ const ds=dayInfo(dayNum); if(!ds) return; weekCartons += distributedFor(m.id,ds); weekPackets += packetsFor(m.id,ds); });
+      weeklyTotals[m.id][wIdx]=weekCartons; monthlyTotals[m.id]+=weekCartons;
+      weeklyPackets[m.id][wIdx]=weekPackets; monthlyPackets[m.id]+=weekPackets;
+    });
+  });
+  const grandTotal = monthMosques.reduce((s,m)=>s+monthlyTotals[m.id],0);
+
+  const fridgeMonthlyTotals={}, tankerMonthlyTotals={}, fridgeWeeklyTotals={}, tankerWeeklyTotals={}, fridgeMonthlyPackets={}, fridgeWeeklyPackets={};
+  monthMosques.forEach(m=>{
+    fridgeWeeklyTotals[m.id]=[0,0,0,0,0]; tankerWeeklyTotals[m.id]=[0,0,0,0,0]; fridgeWeeklyPackets[m.id]=[0,0,0,0,0];
+    let fSum=0,tSum=0,fPacketSum=0;
+    weeks.forEach((days,wIdx)=>{
+      let fWeek=0,tWeek=0,fPacketWeek=0;
+      days.forEach(dayNum=>{ const ds=dayInfo(dayNum); if(!ds) return; fWeek+=withdrawnFor(m.id,ds); tWeek+=tankerOnlyFor(m.id,ds); fPacketWeek+=fridgeBottlesFor(m.id,ds); });
+      fridgeWeeklyTotals[m.id][wIdx]=fWeek; tankerWeeklyTotals[m.id][wIdx]=tWeek; fridgeWeeklyPackets[m.id][wIdx]=fPacketWeek;
+      fSum+=fWeek; tSum+=tWeek; fPacketSum+=fPacketWeek;
+    });
+    fridgeMonthlyTotals[m.id]=fSum; tankerMonthlyTotals[m.id]=tSum; fridgeMonthlyPackets[m.id]=fPacketSum;
+  });
+  const fridgeGrandTotal = monthMosques.reduce((s,m)=>s+fridgeMonthlyTotals[m.id],0);
+  const tankerGrandTotal = monthMosques.reduce((s,m)=>s+tankerMonthlyTotals[m.id],0);
+
+  return {type:'current', yyyymm, monthMosques, weeks, weekLabels, dayInfo, distributedFor, packetsFor, sourceLabel, tankerMosquesLabel, weeklyTotals, fridgeWeeklyTotals, tankerWeeklyTotals, monthlyTotals, grandTotal, fridgeTotals: fridgeMonthlyTotals, fridgeGrandTotal, tankerTotals: tankerMonthlyTotals, tankerGrandTotal, weeklyPackets, monthlyPackets, fridgeWeeklyPackets, fridgeMonthlyPackets};
+}
+async function buildRangeExportData(months, rangeMosques){
+  const cartonsArchive = await loadCartonsArchive();
+  const totals={}, fridgeTotals={}, tankerTotals={}, packets={}, fridgePackets={};
+  rangeMosques.forEach(m=>{ totals[m.id]=0; fridgeTotals[m.id]=0; tankerTotals[m.id]=0; packets[m.id]=0; fridgePackets[m.id]=0; });
+  for(const yyyymm of months){
+    const data = await loadMonthData(yyyymm, rangeMosques);
+    const total = daysInMonth(yyyymm);
+    rangeMosques.forEach(m=>{
+      for(let d=1; d<=total; d++){
+        const dateStr = monthDateStr(yyyymm, d);
+        const rec = data[m.id] ? data[m.id][dateStr] : null;
+        const approvedRec = (rec && rec.gsApproved) ? rec : null;
+        totals[m.id] += monthlyDistributedFromRecord(approvedRec);
+        if(approvedRec){
+          const sizeFilter = state.monthlyBottleSizeFilter;
+          fridgeTotals[m.id] += (approvedRec.withdrawals||[]).filter(w=> !sizeFilter || (w.bottleSize||'330')===sizeFilter).reduce((s,w)=>s+(Number(w.qty)||0),0);
+          tankerTotals[m.id] += (approvedRec.tankerWithdrawals||[]).filter(w=> !sizeFilter || (w.bottleSize||'330')===sizeFilter).reduce((s,w)=>s+(Number(w.qty)||0),0);
+          if(state.monthlyBottleSizeFilter){
+            packets[m.id] += bottlesForRecordBySize(approvedRec, state.monthlyBottleSizeFilter);
+            fridgePackets[m.id] += (approvedRec.withdrawals||[]).filter(w=>(w.bottleSize||'330')===state.monthlyBottleSizeFilter).reduce((s,w)=>s+bottlesForEntry(w),0);
+          } else {
+            packets[m.id] += bottlesForRecordBySize(approvedRec,'330') + bottlesForRecordBySize(approvedRec,'200');
+            fridgePackets[m.id] += (approvedRec.withdrawals||[]).reduce((s,w)=>s+bottlesForEntry(w),0);
+          }
+        }
+      }
+    });
+    rangeMosques.forEach(m=>{
+      const arc = archivedCartonsFor(cartonsArchive, m.id, yyyymm, state.monthlyBottleSizeFilter);
+      totals[m.id] += arc.fridge + arc.tanker;
+      fridgeTotals[m.id] += arc.fridge;
+      tankerTotals[m.id] += arc.tanker;
+      const mult330=40, mult200=48;
+      if(state.monthlyBottleSizeFilter){
+        const mult = state.monthlyBottleSizeFilter==='200' ? mult200 : mult330;
+        packets[m.id] += (arc.fridge+arc.tanker)*mult;
+        fridgePackets[m.id] += arc.fridge*mult;
+      } else {
+        const eAll = (cartonsArchive[m.id] && cartonsArchive[m.id][yyyymm]) ? cartonsArchive[m.id][yyyymm] : {fridge330:0,fridge200:0,tanker330:0,tanker200:0};
+        packets[m.id] += eAll.fridge330*mult330 + eAll.fridge200*mult200 + eAll.tanker330*mult330 + eAll.tanker200*mult200;
+        fridgePackets[m.id] += eAll.fridge330*mult330 + eAll.fridge200*mult200;
+      }
+    });
+  }
+  return {totals, fridgeTotals, tankerTotals, packets, fridgePackets};
+}
+async function dataManageDownloadCartonsPeriod(catKey, type, key){
+  const sizeFilter = dataManageCartonSize(catKey)==='all' ? null : dataManageCartonSize(catKey);
+  const prevFilter = state.monthlyBottleSizeFilter;
+  state.monthlyBottleSizeFilter = sizeFilter;
+  try{
+    if(type==='month'){
+      const monthMosques = sortMosquesByOrder(mosquesForMonth(key), state.monthlyMosqueOrder);
+      const d = await buildMonthlyExportData(key, monthMosques);
+      exportMonthlyExcel(d);
+    } else {
+      const months = monthsForPeriod(type, key);
+      const rangeMosques = mosquesForRange(months);
+      const d = await buildRangeExportData(months, rangeMosques);
+      const rangeLabel = type==='quarter' ? quarterDisplayLabel(key) : type==='half' ? halfDisplayLabel(key) : `سنة ${key}`;
+      exportRangeExcel(type, rangeLabel, rangeMosques, d.totals, d.fridgeTotals, d.tankerTotals, d.packets, d.fridgePackets);
+    }
+  } finally { state.monthlyBottleSizeFilter = prevFilter; }
+}
+async function dataManageDeleteCartonsPeriod(catKey, type, key){
+  const months = monthsForPeriod(type, key);
+  const items = (await scanAllRecordDates()).filter(it=>months.includes(it.month));
+  await dataManageDeleteCartons(catKey, items);
+}
+async function scanCartonsPeriods(){
+  const items = await scanAllRecordDates();
+  const months = Array.from(new Set(items.map(it=>it.month))).sort();
+  const years = Array.from(new Set(months.map(m=>m.slice(0,4)))).sort();
+  const quarters = [];
+  years.forEach(y=>{ for(let q=1; q<=4; q++) quarters.push(`${y}-Q${q}`); }); // تُعرض كل الأرباع الأربعة لكل سنة فيها بيانات، وليس فقط الأرباع التي بها بيانات فعلًا
+  return {months, quarters, years};
+}
+function renderPeriodsCategoryBody(body, cat, sections){
+  body.innerHTML = sections.map(sec=>`
+    <div class="card" style="margin-bottom:10px">
+      <h4 style="margin:0 0 8px">${sec.label}</h4>
+      ${sec.items.length ? sec.items.map(it=>`
+        <div class="row" style="justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px;flex-wrap:wrap;gap:6px">
+          <span>${it.label}</span>
+          <div class="row gap-sm">
+            <button class="btn btn-primary btn-sm" type="button" data-per-dl="${sec.key}:${it.key}">⬇️ تنزيل</button>
+            <button class="btn btn-sm" style="background:#c0392b;color:#fff" type="button" data-per-del="${sec.key}:${it.key}">🗑️ حذف</button>
+          </div>
+        </div>`).join('') : '<p class="muted small">لا توجد بيانات لهذا التصنيف بعد.</p>'}
+    </div>
+  `).join('');
+  const sectionTypeOf = (sk)=> sections.find(s=>s.key===sk).type;
+  body.querySelectorAll('[data-per-dl]').forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      const [sectionKey, itemKey] = b.dataset.perDl.split(':');
+      await cat.onDownload(sectionTypeOf(sectionKey), itemKey);
+      toast('تم تنزيل الملف');
+    });
+  });
+  body.querySelectorAll('[data-per-del]').forEach(b=>{
+    b.addEventListener('click', async ()=>{
+      const [sectionKey, itemKey] = b.dataset.perDel.split(':');
+      if(!confirm(`سيتم حذف بيانات هذه الفترة نهائيًا من «${cat.label()}». هل أنت متأكد؟ يُفضّل تنزيل نسخة قبل المتابعة.`)) return;
+      await cat.onDelete(sectionTypeOf(sectionKey), itemKey);
+      dmCache = {};
+      toast('تم الحذف');
+      body.dataset.loaded=''; body.innerHTML=`<div class="empty-state">جارٍ التحميل…</div>`;
+      await renderDataManageCategoryBody(body, cat);
+      body.dataset.loaded='1';
+    });
+  });
+}
+
+/* ---------- مؤشر الثلاجة: نفس بيانات "الكمية الموزعة" الحقيقية (وليس تقييم برودة الماء) — يطابق ما تعرضه القائمة الفعلية في شريط المهام ---------- */
+async function computeIndicatorDailyDetail(mosqueId, date){
+  const rec = await loadRecord(mosqueId, date);
+  const totalWithdrawn = (rec.withdrawals||[]).reduce((s,w)=>s+(Number(w.qty)||0),0);
+  const remaining = (Number(rec.openingStock)||0) + (Number(rec.newCartons)||0) - totalWithdrawn;
+  return {
+    remaining, totalWithdrawn,
+    remaining330: remainingBySize(rec,'330'), remaining200: remainingBySize(rec,'200'),
+    withdrawn330: withdrawnBySize(rec,'330'), withdrawn200: withdrawnBySize(rec,'200'),
+  };
+}
+async function computeIndicatorMonthStats(mosqueId, yyyymm){
+  const indArc = await loadIndicatorArchive();
+  const me = (indArc[mosqueId]&&indArc[mosqueId].month&&indArc[mosqueId].month[yyyymm]) || {sum:0,count:0};
+  const hidden = (indArc[mosqueId]&&indArc[mosqueId].hidden) || {};
+  let total = me.sum;
+  let max = -Infinity, min = Infinity, maxD = '', minD = '';
+  let max330=-Infinity, min330=Infinity, maxD330='', minD330='', max200=-Infinity, min200=Infinity, maxD200='', minD200='';
+  const m = mosqueById(mosqueId);
+  const data = await loadMonthData(yyyymm, m?[m]:[]);
+  const total_days = daysInMonth(yyyymm);
+  for(let d=1; d<=total_days; d++){
+    const dateStr = monthDateStr(yyyymm, d);
+    if(hidden[dateStr]) continue; // محسوبة مسبقًا ضمن الأرشيف عند حذفها من "اليومي" — لا تُحسب مرتين
+    const rec = data[mosqueId] ? data[mosqueId][dateStr] : null;
+    const val = totalDistributedFromRecord(rec);
+    const v330 = cartonsForRecordBySize(rec,'330'), v200 = cartonsForRecordBySize(rec,'200');
+    total += val;
+    if(val>max){ max=val; maxD=dateStr; } if(val>0 && val<min){ min=val; minD=dateStr; } // يُستبعد يوم بلا توزيع (0) من حساب "الأقل" حتى تكون له قيمة فعلية دائمًا
+    if(v330>max330){ max330=v330; maxD330=dateStr; } if(v330>0 && v330<min330){ min330=v330; minD330=dateStr; }
+    if(v200>max200){ max200=v200; maxD200=dateStr; } if(v200>0 && v200<min200){ min200=v200; minD200=dateStr; }
+  }
+  return {total, max: max===-Infinity?0:max, min: min===Infinity?0:min, maxD, minD, max330: max330===-Infinity?0:max330, min330: min330===Infinity?0:min330, maxD330, minD330, max200: max200===-Infinity?0:max200, min200: min200===Infinity?0:min200, maxD200, minD200};
+}
+async function computeIndicatorQuarterStats(mosqueId, qkey){
+  const months = monthsInQuarter(qkey);
+  const indArc = await loadIndicatorArchive();
+  const qe = (indArc[mosqueId]&&indArc[mosqueId].quarter&&indArc[mosqueId].quarter[qkey]) || {sum:0,count:0};
+  const hidden = (indArc[mosqueId]&&indArc[mosqueId].hidden) || {};
+  let total = qe.sum, max=-Infinity, min=Infinity, maxD='', minD='';
+  let max330=-Infinity, min330=Infinity, maxD330='', minD330='', max200=-Infinity, min200=Infinity, maxD200='', minD200='';
+  const m = mosqueById(mosqueId);
+  for(const yyyymm of months){
+    const data = await loadMonthData(yyyymm, m?[m]:[]);
+    const total_days = daysInMonth(yyyymm);
+    for(let d=1; d<=total_days; d++){
+      const dateStr = monthDateStr(yyyymm, d);
+      if(hidden[dateStr]) continue;
+      const rec = data[mosqueId] ? data[mosqueId][dateStr] : null;
+      const val = totalDistributedFromRecord(rec);
+      const v330 = cartonsForRecordBySize(rec,'330'), v200 = cartonsForRecordBySize(rec,'200');
+      total += val;
+      if(val>max){ max=val; maxD=dateStr; } if(val>0 && val<min){ min=val; minD=dateStr; }
+      if(v330>max330){ max330=v330; maxD330=dateStr; } if(v330>0 && v330<min330){ min330=v330; minD330=dateStr; }
+      if(v200>max200){ max200=v200; maxD200=dateStr; } if(v200>0 && v200<min200){ min200=v200; minD200=dateStr; }
+    }
+  }
+  return {total, max: max===-Infinity?0:max, min: min===Infinity?0:min, maxD, minD, max330: max330===-Infinity?0:max330, min330: min330===Infinity?0:min330, maxD330, minD330, max200: max200===-Infinity?0:max200, min200: min200===Infinity?0:min200, maxD200, minD200};
+}
+async function computeIndicatorAllSitesMonthStats(yyyymm){
+  const stats = await Promise.all(MOSQUES.map(m=>computeIndicatorMonthStats(m.id, yyyymm)));
+  const perMosque = MOSQUES.map((m,i)=>({m, s:stats[i]}));
+  const total = stats.reduce((s,x)=>s+x.total,0);
+  return {total, perMosque};
+}
+async function computeIndicatorAllSitesQuarterStats(qkey){
+  const stats = await Promise.all(MOSQUES.map(m=>computeIndicatorQuarterStats(m.id, qkey)));
+  const perMosque = MOSQUES.map((m,i)=>({m, s:stats[i]}));
+  const total = stats.reduce((s,x)=>s+x.total,0);
+  return {total, perMosque};
+}
+
+/* ---------- حذف/تصدير: الحقول العامة (تُستخدم لعدة قوائم) ---------- */
+async function dataManageDeleteRecordFields(catKey, items){
+  const fields = DATA_MANAGE_RECORD_FIELDS[catKey];
+  const def = defaultRecordShape();
+  for(const it of items){
+    const rec = await loadRecord(it.mosqueId, it.date);
+    fields.forEach(f=>{ rec[f] = def[f]; });
+    await storageSet(recKey(it.mosqueId, it.date), JSON.stringify(rec));
+  }
+}
+async function dataManageDeleteCartons(catKey, items){
+  const sizeScope = dataManageCartonSize(catKey);
+  await archiveCartonsBeforeDelete(items, sizeScope);
+  for(const it of items){
+    const rec = await loadRecord(it.mosqueId, it.date);
+    if(sizeScope==='all'){ rec.withdrawals = []; rec.tankerWithdrawals = []; }
+    else {
+      rec.withdrawals = (rec.withdrawals||[]).filter(w=>(w.bottleSize||'330')!==sizeScope);
+      rec.tankerWithdrawals = (rec.tankerWithdrawals||[]).filter(w=>(w.bottleSize||'330')!==sizeScope);
+    }
+    rec.qtyDistributed330 = (rec.tankerWithdrawals||[]).filter(w=>(w.bottleSize||'330')==='330').reduce((s,w)=>s+(Number(w.qty)||0),0);
+    rec.qtyDistributed200 = (rec.tankerWithdrawals||[]).filter(w=>(w.bottleSize||'330')==='200').reduce((s,w)=>s+(Number(w.qty)||0),0);
+    rec.qtyDistributed = rec.qtyDistributed330 + rec.qtyDistributed200;
+    await storageSet(recKey(it.mosqueId, it.date), JSON.stringify(rec));
+  }
+}
+async function dataManageDeleteWarehouse(items){
+  for(const it of items){ await storageSet(warehouseKey(it.date), JSON.stringify({supplyEntries:[],returnEntries:[]})); }
+}
+async function dataManageDeleteDriver(items){
+  for(const it of items){
+    await storageSet(driverSummaryKey(it.driverId, it.date), JSON.stringify({}));
+    for(const m of MOSQUES){ await storageSet(driverKey(it.driverId, m.id, it.date), JSON.stringify({})); }
+  }
+}
+async function dataManageDeleteAttendance(sel){ // sel: [{date, month}] — يشمل كل المواقع لنفس اليوم
+  const fields = DATA_MANAGE_RECORD_FIELDS.attendlog;
+  const def = defaultRecordShape();
+  for(const it of sel){
+    for(const m of MOSQUES){
+      const rec = await loadRecord(m.id, it.date);
+      fields.forEach(f=>{ rec[f] = def[f]; });
+      await storageSet(recKey(m.id, it.date), JSON.stringify(rec));
+    }
+  }
+}
+async function dataManageDeleteSupplierDaily(sel){
+  const arc = await loadSupplierArchive();
+  for(const it of sel){
+    const rec = await loadRecord(it.mosqueId, it.date);
+    const e = supplierArchiveEntry(arc, it.mosqueId, it.month);
+    e.requested += Number(rec.orderRequestedQty)||0;
+    e.requested330 += Number(rec.orderRequestedQty330)||0;
+    e.requested200 += Number(rec.orderRequestedQty200)||0;
+    e.delivered += Number(rec.supplierDeliveredQty)||0;
+    e.delivered330 += Number(rec.supplierDeliveredQty330)||0;
+    e.delivered200 += Number(rec.supplierDeliveredQty200)||0;
+  }
+  await saveSupplierArchive(arc);
+  await dataManageDeleteRecordFields('supplier', sel);
+}
+async function dataManageDeleteSupplierMonthly(sel){ // sel: [{mosqueId, date: yyyymm}]
+  const arc = await loadSupplierArchive();
+  sel.forEach(it=>{ if(arc[it.mosqueId]) delete arc[it.mosqueId][it.date]; });
+  await saveSupplierArchive(arc);
+}
+async function dataManageDeleteIndicatorDaily(sel){ // sel: [{mosqueId, date, month}] — يوم واحد لموقع واحد فقط، بلا دمج مع أيام أخرى. لا يمسّ بيانات الكراتين الموزعة إطلاقًا.
+  const indArc = await loadIndicatorArchive();
+  for(const it of sel){
+    if(!indArc[it.mosqueId]) indArc[it.mosqueId] = {};
+    if(!indArc[it.mosqueId].hidden) indArc[it.mosqueId].hidden = {};
+    if(indArc[it.mosqueId].hidden[it.date]) continue; // محذوف مسبقًا من هذه القائمة، لا تكرّر الإضافة للأرشيف
+    const rec = await loadRecord(it.mosqueId, it.date);
+    const val = totalDistributedFromRecord(rec);
+    indArc[it.mosqueId].hidden[it.date] = true;
+    const me = indicatorArchiveEntry(indArc, it.mosqueId, 'month', it.month);
+    me.sum += val; me.count += 1;
+    const qe = indicatorArchiveEntry(indArc, it.mosqueId, 'quarter', quarterKeyOf(it.month));
+    qe.sum += val; qe.count += 1;
+  }
+  await saveIndicatorArchive(indArc);
+  // لا يُحذف أي شيء من السجل الفعلي — بيانات الكراتين الموزعة و330مل و200مل تبقى كما هي تمامًا
+}
+async function dataManageDeleteIndicatorMonth(sel){ // sel: [{mosqueId, date: yyyymm}] — يحذف فقط ما تراكم في سجل "الشهر الحالي"، مستقل عن الربع السنوي
+  const indArc = await loadIndicatorArchive();
+  sel.forEach(it=>{ if(indArc[it.mosqueId] && indArc[it.mosqueId].month) delete indArc[it.mosqueId].month[it.date]; });
+  await saveIndicatorArchive(indArc);
+}
+async function dataManageDeleteIndicatorQuarter(sel){ // sel: [{mosqueId, date: qkey}] — مستقل عن الشهر الحالي
+  const indArc = await loadIndicatorArchive();
+  sel.forEach(it=>{ if(indArc[it.mosqueId] && indArc[it.mosqueId].quarter) delete indArc[it.mosqueId].quarter[it.date]; });
+  await saveIndicatorArchive(indArc);
+}
+async function dataManageDeleteIndicatorAllSitesMonth(sel){ // sel: [{date: yyyymm}]
+  const indArc = await loadIndicatorArchive();
+  sel.forEach(it=>{ MOSQUES.forEach(m=>{ if(indArc[m.id] && indArc[m.id].month) delete indArc[m.id].month[it.date]; }); });
+  await saveIndicatorArchive(indArc);
+}
+async function dataManageDeleteIndicatorAllSitesQuarter(sel){
+  const indArc = await loadIndicatorArchive();
+  sel.forEach(it=>{ MOSQUES.forEach(m=>{ if(indArc[m.id] && indArc[m.id].quarter) delete indArc[m.id].quarter[it.date]; }); });
+  await saveIndicatorArchive(indArc);
+}
+
+/* ---------- التصدير: Word / Excel لكل قائمة ---------- */
+async function computeAttendLogForMonth(yyyymm){
+  const isCurrentMonth = yyyymm === state.today.slice(0,7);
+  const monthData = await loadMonthData(yyyymm);
+  await syncAttendLogRosterForMonth(yyyymm, isCurrentMonth, monthData);
+  const roster = state.attendLogRoster[yyyymm] || [];
+  if(!state.attendLogData[yyyymm]) state.attendLogData[yyyymm] = {};
+  const dm = state.attendLogData[yyyymm];
+  const total = daysInMonth(yyyymm);
+  const dayCols = [];
+  for(let d=1; d<=total; d++) dayCols.push(monthDateStr(yyyymm, d));
+  function isManualJobTitle(jobTitle){
+    const opt = (state.collabLabels.jobTitleOptions||[]).find(o=>o.label===jobTitle);
+    return !!(opt && opt.manual);
+  }
+  function mosqueForCollabOnDate(r, dateStr){
+    if(!r.mosqueHistory || !r.mosqueHistory.length) return r.mosqueId;
+    let effective = r.mosqueHistory[0].mosqueId;
+    for(const h of r.mosqueHistory){ if(h.since <= dateStr) effective = h.mosqueId; else break; }
+    return effective;
+  }
+  function actualMarkFor(r, dateStr){
+    if(!dm[r.id]) dm[r.id] = {dailyReward:0, contract:null, overrides:{}, manualMarks:{}};
+    if(!dm[r.id].manualMarks) dm[r.id].manualMarks = {};
+    if(isManualJobTitle(r.jobTitle)) return dm[r.id].manualMarks[dateStr] || 'none';
+    const effectiveMosqueId = mosqueForCollabOnDate(r, dateStr);
+    const rec = monthData[effectiveMosqueId] ? monthData[effectiveMosqueId][dateStr] : null;
+    if(!rec || !rec.savedAt || !rec.gsApproved) return 'none';
+    const st = rec.attendance ? rec.attendance[r.id] : null;
+    if(st==='present') return 'present';
+    if(st==='absent') return 'absent';
+    return 'none';
+  }
+  function dayMarkFor(r, dateStr){
+    if(!dm[r.id]) dm[r.id] = {dailyReward:0, contract:null, overrides:{}, manualMarks:{}};
+    if(isManualJobTitle(r.jobTitle)) return actualMarkFor(r, dateStr);
+    if(dm[r.id].overrides[dateStr]==='double' && actualMarkFor(r,dateStr)==='present') return 'double';
+    return actualMarkFor(r, dateStr);
+  }
+  function workDaysFor(r){
+    return dayCols.reduce((sum,d)=>{ const mark = dayMarkFor(r,d); if(mark==='double') return sum+2; if(mark==='present') return sum+1; return sum; }, 0);
+  }
+  const [y,mo] = yyyymm.split('-').map(Number);
+  const monthName = toEnglishDigits(new Intl.DateTimeFormat('ar-SA-u-nu-latn',{month:'long',year:'numeric'}).format(new Date(y,mo-1,1)));
+  return {roster, dm, dayCols, workDaysFor, dayMarkFor, monthName};
+}
+async function dataManageExportAttendance(sel){
+  const months = Array.from(new Set(sel.map(s=>s.month || s.date.slice(0,7))));
+  for(const yyyymm of months){
+    const {roster, dm, dayCols, workDaysFor, dayMarkFor, monthName} = await computeAttendLogForMonth(yyyymm);
+    exportAttendLogExcel(monthName, roster, dm, dayCols, state.attendLogLabels, workDaysFor, dayMarkFor);
+  }
+}
+async function dataManageExportReportsWord(items){
+  const parts = [];
+  for(const it of items){
+    const rec = await loadRecord(it.mosqueId, it.date);
+    const supervisorUser = state.users.find(u=>u.role==='supervisor' && u.mosqueId===it.mosqueId);
+    const supervisorName = rec.supervisorNameOverride || (supervisorUser ? supervisorUser.name : '—');
+    const w330 = withdrawnBySize(rec, '330'), w200 = withdrawnBySize(rec, '200');
+    const totalWithdrawn = w330 + w200;
+    const r330 = remainingBySize(rec, '330'), r200 = remainingBySize(rec, '200');
+    const collabs = state.collaborators.filter(c=>c.mosqueId===it.mosqueId);
+    const attendanceRows = collabs.map(c=>{
+      const st = (rec.attendance||{})[c.id];
+      const label = st==='present' ? '<span style="color:#0a7a3d;font-weight:700">✔ حاضر</span>' : st==='absent' ? '<span style="color:#b3261e;font-weight:700">✘ غائب</span>' : '<span style="color:#888">— لم يُسجَّل</span>';
+      return `<tr><td>${c.name}</td><td style="text-align:center">${label}</td></tr>`;
+    }).join('') || '<tr><td colspan="2">لا يوجد متعاونون مسجَّلون لهذا الموقع</td></tr>';
+    const photoCell = (src, label)=> `<td style="width:33%;text-align:center;border:none">${src?`<img src="${src}" width="150" height="150" style="width:150px;height:150px;object-fit:cover">`:'—'}<div>${label}</div></td>`;
+    parts.push(`<div${parts.length?' class="pgbreak"':''}>
+      <h2 style="text-align:center">التقرير اليومي للمشرفين — توزيع عبوات الماء</h2>
+      <table>
+        <tr><th style="width:30%">اليوم</th><td>${dayNameOnly(it.date)}</td></tr>
+        <tr><th>التاريخ الميلادي</th><td>${humanDateNoDay(it.date)}</td></tr>
+        <tr><th>التاريخ الهجري</th><td>${hijriDate(it.date)}</td></tr>
+        <tr><th>موقع التوزيع</th><td>${it.mosqueName}</td></tr>
+        <tr><th>المشرف</th><td>${supervisorName}</td></tr>
+      </table>
+      <table style="table-layout:fixed">
+        <tr>
+          <td style="width:50%;vertical-align:top;border:none;padding:0 4px 0 0">
+            <table>
+              <tr><th colspan="2" style="text-align:center">رصيد الثلاجة</th></tr>
+              <tr><td>الرصيد الافتتاحي</td><td>330: ${rec.openingStock330||0} — 200: ${rec.openingStock200||0}</td></tr>
+              <tr><td>كراتين جديدة موردة</td><td>330: ${rec.newCartons330||0} — 200: ${rec.newCartons200||0}</td></tr>
+              <tr><td>إجمالي المسحوب</td><td>${totalWithdrawn} (330: ${w330} — 200: ${w200})</td></tr>
+              <tr><td>المتبقي</td><td>330: ${r330} — 200: ${r200}</td></tr>
+            </table>
+          </td>
+          <td style="width:50%;vertical-align:top;border:none;padding:0 0 0 4px">
+            <table>
+              <tr><th colspan="2" style="text-align:center">ناقلات الماء</th></tr>
+              <tr><td>وقت وصول الناقلة</td><td>${rec.tankerArrival ? formatTime12(rec.tankerArrival) : '—'}</td></tr>
+              <tr><td>عدد الناقلات</td><td>${rec.tankerCount||0}</td></tr>
+              <tr><td>الكمية المستلمة</td><td>330: ${rec.qtyReceived330||0} — 200: ${rec.qtyReceived200||0}</td></tr>
+              <tr><td>الكمية الموزعة</td><td>${rec.qtyDistributed||0}</td></tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+      <table><tr><th>بداية التوزيع</th><td>${rec.distributionStart ? formatTime12(rec.distributionStart) : '—'}</td><th>نهاية التوزيع</th><td>${rec.distributionEnd ? formatTime12(rec.distributionEnd) : '—'}</td></tr></table>
+      <h3>حضور المتعاونين</h3>
+      <table><tr><th>الاسم</th><th>الحالة</th></tr>${attendanceRows}</table>
+      <h3>صور الدخول والخروج والثلاجة</h3>
+      <table><tr>
+        ${photoCell(rec.entryPhoto, 'الدخول')}
+        ${photoCell(rec.exitPhoto, 'الخروج')}
+        ${photoCell(rec.fridgePhoto, 'الثلاجة')}
+      </tr></table>
+      ${rec.receipt?`<h3>السند</h3><img src="${rec.receipt}" width="200" style="width:200px">`:''}
+      <h3>النقاط الفعالة</h3>
+      ${(rec.actionPoints&&rec.actionPoints.length) ? rec.actionPoints.map(p=>`
+        <p><strong>${p.text||'بدون اسم'}</strong> — الكمية: ${(p.withdrawals||[]).reduce((s,w)=>s+(Number(w.qty)||0),0)} كرتون</p>
+        ${(p.photos||[]).map(ph=>`<img src="${ph.dataUrl}" width="150" style="width:150px;display:inline-block;margin-left:6px">`).join('')}
+      `).join('') : '<p>لا توجد نقاط فعالة.</p>'}
+      <h3>الملاحظات</h3>
+      <p>${rec.notes || '—'}</p>
+      ${rec.notesPhoto?`<img src="${rec.notesPhoto}" width="200" style="width:200px">`:''}
+      </div>`);
+  }
+  downloadAsWord(`saqya_reports_${Date.now()}`, parts.join(''), false);
+}
+async function dataManageExportWarehouseWord(items){
+  const parts = [];
+  for(const it of items){
+    const data = safeParse(await storageGet(warehouseKey(it.date)), {supplyEntries:[],returnEntries:[]});
+    parts.push(`<div${parts.length?' class="pgbreak"':''}>
+      <h2>المستودع — ${it.date}</h2>
+      <h3>التوريد</h3>
+      <table><tr><th>البيان</th><th>الكمية</th><th>الوقت</th></tr>
+        ${(data.supplyEntries||[]).map(e=>`<tr><td>${e.note||''}</td><td>${e.qty||0}</td><td>${e.time||''}</td></tr>`).join('') || '<tr><td colspan="3">لا يوجد</td></tr>'}
+      </table>
+      <h3>الإرجاع</h3>
+      <table><tr><th>البيان</th><th>الكمية</th><th>الوقت</th></tr>
+        ${(data.returnEntries||[]).map(e=>`<tr><td>${e.note||''}</td><td>${e.qty||0}</td><td>${e.time||''}</td></tr>`).join('') || '<tr><td colspan="3">لا يوجد</td></tr>'}
+      </table>
+      </div>`);
+  }
+  downloadAsWord(`saqya_warehouse_${Date.now()}`, parts.join(''), false);
+}
+async function dataManageExportDriverWord(items){
+  const parts = [];
+  for(const it of items){
+    const summary = await loadDriverSummary(it.driverId, it.date);
+    const perMosqueRows = [];
+    for(const m of MOSQUES){
+      const dr = await loadDriverRecord(it.driverId, m.id, it.date);
+      if(dr.deliveredQty || dr.returnQty || dr.notVisited){
+        perMosqueRows.push(`<tr><td>${m.name}</td><td>${dr.deliveredQty||0}</td><td>${dr.deliveredTime||'—'}</td><td>${dr.returnQty||0}</td><td>${dr.returnTime||'—'}</td><td>${dr.notVisited?'لم تتم الزيارة':''}</td></tr>`);
+      }
+    }
+    parts.push(`<div${parts.length?' class="pgbreak"':''}>
+      <h2>${it.driverName} — ${it.date}</h2>
+      <table><tr><th>الكمية المستلمة (المستودع)</th><td>${summary.receivedQty||0}</td></tr><tr><th>وقت الاستلام</th><td>${summary.receivedTime||'—'}</td></tr></table>
+      <h3>التوزيع على المواقع</h3>
+      <table><tr><th>الموقع</th><th>الكمية الموصلة</th><th>وقت التسليم</th><th>الكمية المرتجعة</th><th>وقت الإرجاع</th><th>ملاحظة</th></tr>
+        ${perMosqueRows.join('') || '<tr><td colspan="6">لا يوجد</td></tr>'}
+      </table>
+      </div>`);
+  }
+  downloadAsWord(`saqya_driveradmin_${Date.now()}`, parts.join(''), false); // بدون صور سند التسليم عمدًا
+}
+async function dataManageExportSupplierDailyWord(sel){
+  const byMosque = {};
+  sel.forEach(it=>{ if(!byMosque[it.mosqueId]) byMosque[it.mosqueId] = {name:it.mosqueName, dates:[]}; byMosque[it.mosqueId].dates.push(it.date); });
+  const parts = [];
+  for(const mosqueId in byMosque){
+    const dates = byMosque[mosqueId].dates.sort();
+    let rows = '';
+    for(const date of dates){
+      const rec = await loadRecord(mosqueId, date);
+      rows += `<tr><td>${date}</td><td>${rec.orderRequestedQty||0} (330:${rec.orderRequestedQty330||0}/200:${rec.orderRequestedQty200||0})</td><td>${rec.supplierDeliveredQty||0} (330:${rec.supplierDeliveredQty330||0}/200:${rec.supplierDeliveredQty200||0})</td><td>${rec.supplierArrivalTime||'—'}</td></tr>`;
+    }
+    parts.push(`<div${parts.length?' class="pgbreak"':''}><h2>${byMosque[mosqueId].name} — بيانات المورد اليومية</h2>
+      <table><tr><th>التاريخ</th><th>الكمية المطلوبة</th><th>الكمية المستلمة</th><th>وقت الوصول</th></tr>${rows}</table></div>`);
+  }
+  downloadAsWord(`saqya_supplier_daily_${Date.now()}`, parts.join(''), true);
+}
+async function dataManageExportSupplierMonthlyWord(sel){
+  const arc = await loadSupplierArchive();
+  const byMosque = {};
+  sel.forEach(it=>{ if(!byMosque[it.mosqueId]) byMosque[it.mosqueId] = {name:it.mosqueName, dates:[]}; byMosque[it.mosqueId].dates.push(it.date); });
+  const parts = [];
+  for(const mosqueId in byMosque){
+    const dates = byMosque[mosqueId].dates.sort();
+    const rows = dates.map(d=>{ const e=(arc[mosqueId]&&arc[mosqueId][d])||{}; return `<tr><td>${d}</td><td>${e.requested||0}</td><td>${e.requested330||0}</td><td>${e.requested200||0}</td><td>${e.delivered||0}</td><td>${e.delivered330||0}</td><td>${e.delivered200||0}</td></tr>`; }).join('');
+    parts.push(`<div${parts.length?' class="pgbreak"':''}><h2>${byMosque[mosqueId].name} — السجل الشهري للمورد</h2>
+      <table><tr><th>الشهر</th><th>المطلوب</th><th>330</th><th>200</th><th>المستلم</th><th>330</th><th>200</th></tr>${rows}</table></div>`);
+  }
+  downloadAsWord(`saqya_supplier_monthly_${Date.now()}`, parts.join(''), true);
+}
+async function dataManageExportSupplierLogWord(items){
+  const byMosque = {};
+  items.forEach(it=>{ if(!byMosque[it.mosqueId]) byMosque[it.mosqueId] = {name:it.mosqueName, dates:[]}; byMosque[it.mosqueId].dates.push(it.date); });
+  const parts = [];
+  for(const mosqueId in byMosque){
+    const dates = byMosque[mosqueId].dates.sort();
+    const orders = await getSupplierOrdersInRange(mosqueId, dates[0], dates[dates.length-1]);
+    parts.push(`<div${parts.length?' class="pgbreak"':''}><h2>${byMosque[mosqueId].name} — سجل المورد</h2>
+      <table><tr><th>التاريخ</th><th>الكمية المطلوبة</th><th>المستلمة</th><th>الحالة</th></tr>
+        ${orders.map(o=>`<tr><td>${o.date}</td><td>${o.qty}</td><td>${o.deliveredQty}</td><td>${o.status}</td></tr>`).join('') || '<tr><td colspan="4">لا يوجد</td></tr>'}
+      </table></div>`);
+  }
+  downloadAsWord(`saqya_supplierlog_${Date.now()}`, parts.join(''), false);
+}
+async function dataManageExportCartonsExcel(catKey, items){
+  const sizeScope = dataManageCartonSize(catKey);
+  const th = (t)=>`<th style="background:#17256E;color:#fff;padding:4px;border:1px solid #999">${t}</th>`;
+  const td = (t,bold)=>`<td style="border:1px solid #ccc;padding:4px;text-align:center${bold?';font-weight:bold':''}">${t}</td>`;
+  const groups = groupByMosqueMonth(items);
+  const weekLabels = ['الأول','الثاني','الثالث','الرابع','الخامس'];
+  let body = '';
+  for(const g of groups){
+    const selectedDates = new Set(g.items.map(it=>it.date));
+    const total = daysInMonth(g.month);
+    const m = mosqueById(g.mosqueId);
+    const monthData = await loadMonthData(g.month, m?[m]:[]);
+    function fridgeQty(dateStr){
+      const rec = monthData[g.mosqueId] ? monthData[g.mosqueId][dateStr] : null;
+      if(!rec) return 0;
+      return (rec.withdrawals||[]).filter(w=> sizeScope==='all' || (w.bottleSize||'330')===sizeScope).reduce((s,w)=>s+(Number(w.qty)||0),0);
+    }
+    function tankerQty(dateStr){
+      const rec = monthData[g.mosqueId] ? monthData[g.mosqueId][dateStr] : null;
+      if(!rec) return 0;
+      return (rec.tankerWithdrawals||[]).filter(w=> sizeScope==='all' || (w.bottleSize||'330')===sizeScope).reduce((s,w)=>s+(Number(w.qty)||0),0);
+    }
+    body += `<h3>${g.mosqueName} — ${g.month}</h3>`;
+    body += `<table style="border-collapse:collapse;font-family:Arial;margin-bottom:8px"><tr>${th('الأسبوع')}${[1,2,3,4,5,6,7].map(d=>th('يوم '+d)).join('')}${th('إجمالي الأسبوع')}</tr>`;
+    let fridgeSum=0, tankerSum=0;
+    for(let w=0; w<5; w++){
+      let rowCells = '', weekTotal = 0, anyDayInMonth = false;
+      for(let i=0;i<7;i++){
+        const dayNum = w*7+i+1;
+        if(dayNum>total){ rowCells += td('/'); continue; }
+        anyDayInMonth = true;
+        const dateStr = monthDateStr(g.month, dayNum);
+        if(!selectedDates.has(dateStr)){ rowCells += td(''); continue; }
+        const f = fridgeQty(dateStr), t = tankerQty(dateStr);
+        const dayTotal = f+t;
+        weekTotal += dayTotal; fridgeSum += f; tankerSum += t;
+        rowCells += td(dayTotal||'');
+      }
+      if(!anyDayInMonth) continue;
+      body += `<tr>${td('الأسبوع '+weekLabels[w])}${rowCells}${td(weekTotal, true)}</tr>`;
+    }
+    body += `</table>`;
+    body += `<table style="border-collapse:collapse;font-family:Arial;margin-bottom:26px">
+      <tr>${th('إجمالي الثلاجة')}${th('إجمالي ناقلات الماء')}${th('الإجمالي الكلي')}</tr>
+      <tr>${td(fridgeSum,true)}${td(tankerSum,true)}${td(fridgeSum+tankerSum,true)}</tr>
+    </table>`;
+  }
+  downloadAsExcel(`saqya_${catKey}_${Date.now()}`, body);
+}
+async function dataManageExportCartonsSizeBreakdownWord(items){
+  let rows = '';
+  for(const it of items){
+    const rec = await loadRecord(it.mosqueId, it.date);
+    const f330 = (rec.withdrawals||[]).filter(w=>(w.bottleSize||'330')==='330').reduce((s,w)=>s+(Number(w.qty)||0),0);
+    const f200 = (rec.withdrawals||[]).filter(w=>(w.bottleSize||'330')==='200').reduce((s,w)=>s+(Number(w.qty)||0),0);
+    const t330 = (rec.tankerWithdrawals||[]).filter(w=>(w.bottleSize||'330')==='330').reduce((s,w)=>s+(Number(w.qty)||0),0);
+    const t200 = (rec.tankerWithdrawals||[]).filter(w=>(w.bottleSize||'330')==='200').reduce((s,w)=>s+(Number(w.qty)||0),0);
+    rows += `<tr><td>${it.mosqueName}</td><td>${it.date}</td><td>${f330}</td><td>${f200}</td><td>${t330}</td><td>${t200}</td></tr>`;
+  }
+  const body = `<h2>تفصيل عدد العبوات حسب الحجم</h2><table><tr><th>الموقع</th><th>التاريخ</th><th>ثلاجة 330</th><th>ثلاجة 200</th><th>ناقلات 330</th><th>ناقلات 200</th></tr>${rows}</table>`;
+  downloadAsWord(`saqya_cartons_breakdown_${Date.now()}`, body, true);
+}
+async function dataManageExportIndicatorDailyWord(mosqueId, mosqueName, date){
+  const d = await computeIndicatorDailyDetail(mosqueId, date);
+  const green = state.indicatorLabels.fridgeBalanceColor || '#2FAE4E';
+  const red = state.indicatorLabels.withdrawnQtyColor || '#E63B2E';
+  const base = Math.max(0,d.remaining) + Math.max(0,d.totalWithdrawn);
+  const remPct = base>0 ? Math.round(Math.max(0,d.remaining)/base*100) : 0;
+  const witPct = base>0 ? Math.round(Math.max(0,d.totalWithdrawn)/base*100) : 0;
+  const body = `
+    <h2 style="text-align:center">${mosqueName} — مؤشر الثلاجة اليومي — ${date}</h2>
+    <table style="max-width:420px;margin:0 auto 14px">
+      <tr><th style="background:${green};color:#fff">${state.indicatorLabels.fridgeBalance}</th><td style="text-align:center;font-weight:800;color:${green};font-size:18px">${d.remaining} (${remPct}%)</td></tr>
+      <tr><th style="background:${red};color:#fff">${state.indicatorLabels.withdrawnQty}</th><td style="text-align:center;font-weight:800;color:${red};font-size:18px">${d.totalWithdrawn} (${witPct}%)</td></tr>
+    </table>
+    <table style="max-width:420px;margin:0 auto">
+      <tr><th colspan="2" style="text-align:center">تفصيل حسب حجم العبوة</th></tr>
+      <tr><td>330 مل — المتبقي</td><td style="text-align:center;color:${green};font-weight:700">${d.remaining330}</td></tr>
+      <tr><td>330 مل — السحب</td><td style="text-align:center;color:${red};font-weight:700">${d.withdrawn330}</td></tr>
+      <tr><td>200 مل — المتبقي</td><td style="text-align:center;color:${green};font-weight:700">${d.remaining200}</td></tr>
+      <tr><td>200 مل — السحب</td><td style="text-align:center;color:${red};font-weight:700">${d.withdrawn200}</td></tr>
+    </table>`;
+  downloadAsWord(`saqya_indicator_daily_${mosqueId}_${date}`, body, false);
+}
+function indicatorStatsTableHTML(title, color, s, extraLabel, extraValue){
+  return `<div style="margin-bottom:18px">
+    <h3 style="border-right:6px solid ${color};padding-right:8px">${title}</h3>
+    <table><tr><th style="background:${color};color:#fff">الإجمالي الموزَّع</th>${extraLabel?`<th style="background:${color};color:#fff">${extraLabel}</th>`:''}</tr>
+      <tr><td style="text-align:center;font-weight:800">${s.total.toFixed(1)}</td>${extraLabel?`<td style="text-align:center">${extraValue}</td>`:''}</tr>
+    </table>
+    <table style="margin-top:6px"><tr><th style="background:${color};color:#fff">أعلى كمية موزعة</th><th style="background:${color};color:#fff">أقل كمية موزعة</th></tr>
+      <tr><td style="text-align:center">${s.max.toFixed(1)} — ${s.maxD||'—'}</td><td style="text-align:center">${s.min.toFixed(1)} — ${s.minD||'—'}</td></tr>
+    </table>
+    <table style="margin-top:6px">
+      <tr><th style="background:${color};color:#fff">330 مل — الأعلى</th><th style="background:${color};color:#fff">330 مل — الأقل</th><th style="background:${color};color:#fff">200 مل — الأعلى</th><th style="background:${color};color:#fff">200 مل — الأقل</th></tr>
+      <tr><td style="text-align:center">${s.max330.toFixed(1)} — ${s.maxD330||'—'}</td><td style="text-align:center">${s.min330.toFixed(1)} — ${s.minD330||'—'}</td><td style="text-align:center">${s.max200.toFixed(1)} — ${s.maxD200||'—'}</td><td style="text-align:center">${s.min200.toFixed(1)} — ${s.minD200||'—'}</td></tr>
+    </table>
+  </div>`;
+}
+async function dataManageExportIndicatorMonthWord(mosqueId, mosqueName, yyyymm){
+  const m = mosqueById(mosqueId);
+  const s = await computeIndicatorMonthStats(mosqueId, yyyymm);
+  const collabCount = state.collaborators.filter(c=>c.mosqueId===mosqueId).length;
+  const days = await buildIndicatorDaysData([yyyymm], m?[m]:[]);
+  const chartImg = m ? await indicatorChartImageHTML([m], days, 700) : '';
+  const legend = m ? indicatorChartLegendHTML([m]) : '';
+  const statsTable = indicatorStatsTableHTML(`${mosqueName} — الشهر الحالي — ${yyyymm}`, m?m.color:'#17256E', s, 'عدد المتعاونين', collabCount);
+  downloadAsWord(`saqya_indicator_month_${mosqueId}_${yyyymm}`, chartImg + legend + statsTable, true);
+}
+async function dataManageExportIndicatorQuarterWord(mosqueId, mosqueName, qkey){
+  const m = mosqueById(mosqueId);
+  const s = await computeIndicatorQuarterStats(mosqueId, qkey);
+  const collabCount = state.collaborators.filter(c=>c.mosqueId===mosqueId).length;
+  const days = await buildIndicatorDaysData(monthsInQuarter(qkey), m?[m]:[]);
+  const chartImg = m ? await indicatorChartImageHTML([m], days, 700) : '';
+  const legend = m ? indicatorChartLegendHTML([m]) : '';
+  const statsTable = indicatorStatsTableHTML(`${mosqueName} — ${quarterDisplayLabel(qkey)}`, m?m.color:'#17256E', s, 'عدد المتعاونين', collabCount);
+  downloadAsWord(`saqya_indicator_quarter_${mosqueId}_${qkey}`, chartImg + legend + statsTable, true);
+}
+async function dataManageExportIndicatorAllSitesMonthWord(yyyymm){
+  const r = await computeIndicatorAllSitesMonthStats(yyyymm);
+  const days = await buildIndicatorDaysData([yyyymm], MOSQUES);
+  const chartImg = await indicatorChartImageHTML(MOSQUES, days, 700);
+  const legend = indicatorChartLegendHTML(MOSQUES);
+  const parts = [`<h2 style="text-align:center">جميع المواقع سويًا — الشهر الحالي — ${yyyymm}</h2>`, chartImg, legend, `<table><tr><th>الإجمالي الكلي لكل المواقع</th></tr><tr><td style="text-align:center;font-weight:800">${r.total.toFixed(1)}</td></tr></table>`];
+  r.perMosque.forEach(({m,s})=> parts.push(indicatorStatsTableHTML(m.name, m.color, s)));
+  downloadAsWord(`saqya_indicator_allsites_month_${yyyymm}`, parts.join(''), true);
+}
+async function dataManageExportIndicatorAllSitesQuarterWord(qkey){
+  const r = await computeIndicatorAllSitesQuarterStats(qkey);
+  const days = await buildIndicatorDaysData(monthsInQuarter(qkey), MOSQUES);
+  const chartImg = await indicatorChartImageHTML(MOSQUES, days, 700);
+  const legend = indicatorChartLegendHTML(MOSQUES);
+  const parts = [`<h2 style="text-align:center">جميع المواقع سويًا — ${quarterDisplayLabel(qkey)}</h2>`, chartImg, legend, `<table><tr><th>الإجمالي الكلي لكل المواقع</th></tr><tr><td style="text-align:center;font-weight:800">${r.total.toFixed(1)}</td></tr></table>`];
+  r.perMosque.forEach(({m,s})=> parts.push(indicatorStatsTableHTML(m.name, m.color, s)));
+  downloadAsWord(`saqya_indicator_allsites_quarter_${qkey}`, parts.join(''), true);
+}
+/* ---------- المسح: يبني الأقسام بشكل يوم/شهر/ربع مباشر، بلا اختيار متعدد ---------- */
+async function scanIndicatorDailySections(){
+  const groups = groupByMosqueMonth(await scanAllRecordDates());
+  return groups.map(g=>({key:`${g.mosqueId}_${g.month}`, label:`${g.mosqueName} — ${g.month}`, type:'daily', items: g.items.map(it=>({key:`${it.mosqueId}|${it.date}`, label: it.date}))}));
+}
+async function scanIndicatorMosqueLevelSections(level){
+  const items = await scanAllRecordDates();
+  const byMosque = {};
+  items.forEach(it=>{
+    if(!byMosque[it.mosqueId]) byMosque[it.mosqueId] = {name:it.mosqueName, monthKeys:new Set(), years:new Set()};
+    byMosque[it.mosqueId].monthKeys.add(it.month);
+    byMosque[it.mosqueId].years.add(it.month.slice(0,4));
+  });
+  return Object.keys(byMosque).map(mosqueId=>{
+    let keys;
+    if(level==='month'){
+      keys = Array.from(byMosque[mosqueId].monthKeys).sort();
+    } else {
+      keys = [];
+      Array.from(byMosque[mosqueId].years).sort().forEach(y=>{ for(let q=1;q<=4;q++) keys.push(`${y}-Q${q}`); });
+    }
+    return {key:mosqueId, label:byMosque[mosqueId].name, type:level, items: keys.map(k=>({key:`${mosqueId}|${k}`, label: level==='month'?k:quarterDisplayLabel(k)}))};
+  });
+}
+async function scanIndicatorAllSitesLevelSections(level){
+  const items = await scanAllRecordDates();
+  let keys;
+  if(level==='month'){
+    keys = Array.from(new Set(items.map(it=>it.month))).sort();
+  } else {
+    const years = Array.from(new Set(items.map(it=>it.month.slice(0,4)))).sort();
+    keys = [];
+    years.forEach(y=>{ for(let q=1;q<=4;q++) keys.push(`${y}-Q${q}`); });
+  }
+  if(!keys.length) return [];
+  return [{key:'all', label:'جميع المواقع', type:level, items: keys.map(k=>({key:k, label: level==='month'?k:quarterDisplayLabel(k)}))}];
+}
+
+/* ---------- المسح (scan) لكل قائمة: يبني groups بشكل {title, items:[{date,...}]} ---------- */
+async function scanReportsGroups(){ return groupByMosqueMonth(await scanAllRecordDates()).map(g=>({title:`${g.mosqueName} — ${g.month}`, items:g.items})); }
+async function scanWarehouseGroups(){ return groupByMonth(await scanAllWarehouseDates()).map(g=>({title:g.month, items:g.items})); }
+async function scanDriverGroups(){ return groupByDriverMonth(await scanAllDriverDates()).map(g=>({title:`${g.driverName} — ${g.month}`, items:g.items})); }
+async function scanCartonsGroups(){ return groupByMosqueMonth(await scanAllRecordDates()).map(g=>({title:`${g.mosqueName} — ${g.month}`, items:g.items})); }
+async function scanAttendanceGroups(){
+  return groupByMonth(await scanAllRecordDates()).map(g=>{
+    const uniq = Array.from(new Set(g.items.map(it=>it.date))).sort();
+    return {title:g.month, items: uniq.map(d=>({date:d, month:g.month}))};
+  });
+}
+async function scanSupplierDailyGroups(){ return groupByMosqueMonth(await scanAllRecordDates()).map(g=>({title:`${g.mosqueName} — ${g.month} (يومي)`, items:g.items})); }
+async function scanSupplierMonthlyGroups(){
+  const arc = await loadSupplierArchive();
+  const groups = [];
+  Object.keys(arc).forEach(mosqueId=>{
+    const m = mosqueById(mosqueId);
+    const months = Object.keys(arc[mosqueId]).sort();
+    if(months.length) groups.push({title:`${m?m.name:mosqueId} — سجل شهري`, items: months.map(mm=>({date:mm, mosqueId, mosqueName:m?m.name:mosqueId}))});
+  });
+  return groups;
+}
+async function scanIndicatorDailyGroups(){ return groupByMosqueMonth(await scanAllRecordDates()).map(g=>({title:`${g.mosqueName} — ${g.month}`, items:g.items})); }
+async function scanIndicatorMosqueLevelGroups(level){
+  const items = await scanAllRecordDates();
+  const arc = await loadIndicatorArchive();
+  const byMosque = {};
+  items.forEach(it=>{
+    if(!byMosque[it.mosqueId]) byMosque[it.mosqueId] = {name:it.mosqueName, keys:new Set()};
+    byMosque[it.mosqueId].keys.add(level==='month' ? it.month : quarterKeyOf(it.month));
+  });
+  Object.keys(arc).forEach(mosqueId=>{
+    if(!arc[mosqueId][level]) return;
+    if(!byMosque[mosqueId]){ const m = mosqueById(mosqueId); byMosque[mosqueId] = {name:m?m.name:mosqueId, keys:new Set()}; }
+    Object.keys(arc[mosqueId][level]).forEach(k=>byMosque[mosqueId].keys.add(k));
+  });
+  const groups = [];
+  Object.keys(byMosque).forEach(mosqueId=>{
+    const keys = Array.from(byMosque[mosqueId].keys).sort();
+    groups.push({title:`${byMosque[mosqueId].name} — ${level==='month'?'الشهر الحالي':'الربع السنوي'}`, items: keys.map(k=>({date:k, mosqueId, mosqueName:byMosque[mosqueId].name}))});
+  });
+  return groups;
+}
+async function scanIndicatorAllSitesLevelGroups(level){
+  const items = await scanAllRecordDates();
+  const arc = await loadIndicatorArchive();
+  const keys = new Set();
+  items.forEach(it=> keys.add(level==='month' ? it.month : quarterKeyOf(it.month)));
+  Object.keys(arc).forEach(mosqueId=>{ if(arc[mosqueId][level]) Object.keys(arc[mosqueId][level]).forEach(k=>keys.add(k)); });
+  const sorted = Array.from(keys).sort();
+  if(!sorted.length) return [];
+  return [{title: level==='month' ? 'جميع المواقع — الشهر الحالي' : 'جميع المواقع — الربع السنوي', items: sorted.map(k=>({date:k}))}];
+}
+
+/* ---------- تعريف القوائم في الواجهة ---------- */
+/* ---------- محوّلات القوائم الدورية (شهر/ربع/موقع) إلى دوال onDownload/onDelete ---------- */
+async function dmIndicatorDailyDownload(type, key){ const [mosqueId,date] = key.split('|'); const m = mosqueById(mosqueId); await dataManageExportIndicatorDailyWord(mosqueId, m?m.name:mosqueId, date); }
+async function dmIndicatorDailyDelete(type, key){ const [mosqueId,date] = key.split('|'); await dataManageDeleteIndicatorDaily([{mosqueId, date, month:date.slice(0,7)}]); }
+async function dmIndicatorMonthDownload(type, key){ const [mosqueId,yyyymm] = key.split('|'); const m = mosqueById(mosqueId); await dataManageExportIndicatorMonthWord(mosqueId, m?m.name:mosqueId, yyyymm); }
+async function dmIndicatorMonthDelete(type, key){ const [mosqueId,yyyymm] = key.split('|'); await dataManageDeleteIndicatorMonth([{mosqueId, date:yyyymm}]); }
+async function dmIndicatorQuarterDownload(type, key){ const [mosqueId,qkey] = key.split('|'); const m = mosqueById(mosqueId); await dataManageExportIndicatorQuarterWord(mosqueId, m?m.name:mosqueId, qkey); }
+async function dmIndicatorQuarterDelete(type, key){ const [mosqueId,qkey] = key.split('|'); await dataManageDeleteIndicatorQuarter([{mosqueId, date:qkey}]); }
+async function dmIndicatorAllSitesMonthDownload(type, key){ await dataManageExportIndicatorAllSitesMonthWord(key); }
+async function dmIndicatorAllSitesMonthDelete(type, key){ await dataManageDeleteIndicatorAllSitesMonth([{date:key}]); }
+async function dmIndicatorAllSitesQuarterDownload(type, key){ await dataManageExportIndicatorAllSitesQuarterWord(key); }
+async function dmIndicatorAllSitesQuarterDelete(type, key){ await dataManageDeleteIndicatorAllSitesQuarter([{date:key}]); }
+
+const DATA_MANAGE_CATEGORIES = [
+  {key:'reports', label:()=>state.sidebarLabels.reports, note:'', scan:scanReportsGroups, onDownload:dataManageExportReportsWord, onDelete:sel=>dataManageDeleteRecordFields('reports', sel)},
+  {key:'attendlog', label:()=>state.sidebarLabels.attendlog, note:'جميع المواقع مجتمعة في جدول واحد، تمامًا كما تظهر في صفحة الحضور والغياب. كل شهر يُحفظ أو يُحذف دفعة واحدة (لا تفصيل يومي).', scan:scanAttendanceGroups, onDownload:dataManageExportAttendance, onDelete:dataManageDeleteAttendance, flat:true},
+  {key:'supplier_daily', label:()=>'المورد — اليومي', note:'حذف يوم من هنا يحفظ كميته تلقائيًا داخل «المورد — السجل الشهري» فلا تضيع.', scan:scanSupplierDailyGroups, onDownload:dataManageExportSupplierDailyWord, onDelete:dataManageDeleteSupplierDaily},
+  {key:'supplier_monthly', label:()=>'المورد — السجل الشهري', note:'يظهر هنا ما تم حذفه سابقًا من «اليومي» فقط. حذفه من هنا مستقل تمامًا ولا يؤثر على أي بيانات يومية ما زالت موجودة.', scan:scanSupplierMonthlyGroups, onDownload:dataManageExportSupplierMonthlyWord, onDelete:dataManageDeleteSupplierMonthly},
+  {key:'supplierlog', label:()=>state.sidebarLabels.supplierlog, note:'', scan:scanReportsGroups, onDownload:dataManageExportSupplierLogWord, onDelete:sel=>dataManageDeleteRecordFields('supplier', sel)},
+  {key:'warehouseadmin', label:()=>state.sidebarLabels.warehouseadmin, note:'', scan:scanWarehouseGroups, onDownload:dataManageExportWarehouseWord, onDelete:dataManageDeleteWarehouse},
+  {key:'driveradmin', label:()=>state.sidebarLabels.driveradmin, note:'التصدير لا يشمل صور سند التسليم.', scan:scanDriverGroups, onDownload:dataManageExportDriverWord, onDelete:dataManageDeleteDriver},
+  {key:'monthly', label:()=>state.sidebarLabels.monthly, note:'نفس جدول "نقل إلى إكسل" الحقيقي تمامًا (الأسبوع بخلفية زرقاء، ثم اليوم، ثم التاريخ، ثم المواقع). اختيار بالشهر/الربع/النصف/السنة كاملة فقط — لا تفصيل يومي.', periods:true, scanPeriods:scanCartonsPeriods, onDownload:(type,key)=>dataManageDownloadCartonsPeriod('monthly',type,key), onDelete:(type,key)=>dataManageDeleteCartonsPeriod('monthly',type,key)},
+  {key:'cartons330', label:()=>state.sidebarLabels.cartons330, note:'نفس جدول "نقل إلى إكسل" الحقيقي لعبوات 330 مل فقط.', periods:true, scanPeriods:scanCartonsPeriods, onDownload:(type,key)=>dataManageDownloadCartonsPeriod('cartons330',type,key), onDelete:(type,key)=>dataManageDeleteCartonsPeriod('cartons330',type,key)},
+  {key:'cartons200', label:()=>state.sidebarLabels.cartons200, note:'نفس جدول "نقل إلى إكسل" الحقيقي لعبوات 200 مل فقط.', periods:true, scanPeriods:scanCartonsPeriods, onDownload:(type,key)=>dataManageDownloadCartonsPeriod('cartons200',type,key), onDelete:(type,key)=>dataManageDeleteCartonsPeriod('cartons200',type,key)},
+  {key:'indicator_daily', label:()=>'مؤشر الثلاجة — اليومي (لكل موقع)', note:'كل يوم يُحفظ أو يُحذف لوحده فقط — لا يمكن دمج أكثر من يوم في عملية واحدة.', scanPeriodsFlat:scanIndicatorDailySections, onDownload:dmIndicatorDailyDownload, onDelete:dmIndicatorDailyDelete},
+  {key:'indicator_month', label:()=>'مؤشر الثلاجة — الشهر الحالي (لكل موقع)', note:'مستقل تمامًا عن الربع السنوي — حذفه لا يؤثر عليه والعكس صحيح.', scanPeriodsFlat:()=>scanIndicatorMosqueLevelSections('month'), onDownload:dmIndicatorMonthDownload, onDelete:dmIndicatorMonthDelete},
+  {key:'indicator_quarter', label:()=>'مؤشر الثلاجة — الربع السنوي (لكل موقع)', note:'مستقل تمامًا عن الشهر الحالي.', scanPeriodsFlat:()=>scanIndicatorMosqueLevelSections('quarter'), onDownload:dmIndicatorQuarterDownload, onDelete:dmIndicatorQuarterDelete},
+  {key:'indicator_allsites_month', label:()=>'مؤشر الثلاجة — جميع المواقع سويًا (الشهر الحالي)', note:'', scanPeriodsFlat:()=>scanIndicatorAllSitesLevelSections('month'), onDownload:dmIndicatorAllSitesMonthDownload, onDelete:dmIndicatorAllSitesMonthDelete},
+  {key:'indicator_allsites_quarter', label:()=>'مؤشر الثلاجة — جميع المواقع سويًا (الربع السنوي)', note:'يمكن اختيار أي ربع تريد حفظه أو حذفه.', scanPeriodsFlat:()=>scanIndicatorAllSitesLevelSections('quarter'), onDownload:dmIndicatorAllSitesQuarterDownload, onDelete:dmIndicatorAllSitesQuarterDelete},
+];
+
+
+/* ---------- الواجهة (عرض عام قابل لإعادة الاستخدام لكل القوائم أعلاه) ---------- */
+function renderAdminDataManage(main){
+  dmCache = {}; // صفحة جديدة = مسح مؤقت جديد، حتى تُقرأ أي تعديلات حديثة من الخادم
+  main.innerHTML = `
+    <h2>${state.sidebarLabels.datamanage}</h2>
+    <p class="muted small">تنزيل أي بيانات مخزّنة في الموقع إلى جهازك كملف Word أو Excel بحسب القائمة، أو حذفها نهائيًا لتقليل المساحة المستخدمة. الحذف لا يمكن التراجع عنه — يُفضّل تنزيل نسخة قبل الحذف. اضغط على أي قائمة لعرض الأشهر المتوفرة، ثم على أي شهر لعرض الأيام وتحديد ما تريد بالضبط.</p>
+    <div class="col gap-md" id="dmCatWrap"></div>
+  `;
+  const wrap = document.getElementById('dmCatWrap');
+  wrap.innerHTML = DATA_MANAGE_CATEGORIES.map(c=>`
+    <div class="card dm-cat" data-dm-cat="${c.key}">
+      <div class="row" style="justify-content:space-between;align-items:center;cursor:pointer" data-dm-cat-head="${c.key}">
+        <h3 style="margin:0">${c.label()}</h3>
+        <span class="muted small" data-dm-cat-arrow="${c.key}">▾ عرض</span>
+      </div>
+      ${c.note ? `<p class="muted small" style="margin:6px 0 0">${c.note}</p>` : ''}
+      <div data-dm-cat-body="${c.key}" style="display:none;margin-top:12px"></div>
+    </div>
+  `).join('');
+  DATA_MANAGE_CATEGORIES.forEach(c=>{
+    const head = wrap.querySelector(`[data-dm-cat-head="${c.key}"]`);
+    head.addEventListener('click', async ()=>{
+      const body = wrap.querySelector(`[data-dm-cat-body="${c.key}"]`);
+      const arrow = wrap.querySelector(`[data-dm-cat-arrow="${c.key}"]`);
+      const opening = body.style.display==='none';
+      body.style.display = opening ? 'block' : 'none';
+      arrow.textContent = opening ? '▴ إخفاء' : '▾ عرض';
+      if(opening && !body.dataset.loaded){
+        body.innerHTML = `<div class="empty-state">جارٍ التحميل…</div>`;
+        await renderDataManageCategoryBody(body, c);
+        body.dataset.loaded = '1';
+      }
+    });
+  });
+}
+async function renderDataManageCategoryBody(body, cat){
+  if(cat.periods){
+    const periods = await cat.scanPeriods();
+    const sections = [
+      {key:'months', label:'الشهر الحالي', type:'month', items: periods.months.map(m=>({key:m, label:m}))},
+      {key:'quarters', label:'الربع السنوي', type:'quarter', items: periods.quarters.map(q=>({key:q, label:quarterDisplayLabel(q)}))},
+      {key:'years', label:'السنة كاملة', type:'year', items: periods.years.map(y=>({key:y, label:y}))},
+    ];
+    renderPeriodsCategoryBody(body, cat, sections);
+    return;
+  }
+  if(cat.scanPeriodsFlat){
+    const sections = await cat.scanPeriodsFlat();
+    if(!sections.length){ body.innerHTML = `<p class="muted small">لا توجد بيانات محفوظة بعد.</p>`; return; }
+    renderPeriodsCategoryBody(body, cat, sections);
+    return;
+  }
+  const groups = await cat.scan();
+  if(!groups.length){ body.innerHTML = `<p class="muted small">لا توجد بيانات محفوظة بعد.</p>`; return; }
+  if(cat.flat){
+    body.innerHTML = `<div class="col gap-sm">${groups.map((g,gi)=>`
+      <div class="row" style="justify-content:space-between;align-items:center;border:1px solid var(--line);border-radius:10px;padding:10px">
+        <span>${g.title} <span class="muted small">(${g.items.length} يوم)</span></span>
+        <div class="row gap-sm">
+          <button class="btn btn-primary btn-sm" type="button" data-dm-flat-dl="${gi}">⬇️ تنزيل</button>
+          <button class="btn btn-sm" style="background:#c0392b;color:#fff" type="button" data-dm-flat-del="${gi}">🗑️ حذف</button>
+        </div>
+      </div>`).join('')}</div>`;
+    groups.forEach((g,gi)=>{
+      body.querySelector(`[data-dm-flat-dl="${gi}"]`).addEventListener('click', async ()=>{
+        await cat.onDownload(g.items);
+        toast('تم تنزيل الملف');
+      });
+      body.querySelector(`[data-dm-flat-del="${gi}"]`).addEventListener('click', async ()=>{
+        if(!confirm(`سيتم حذف «${g.title}» نهائيًا من «${cat.label()}». هل أنت متأكد؟ يُفضّل تنزيل نسخة قبل المتابعة.`)) return;
+        await cat.onDelete(g.items);
+        dmCache = {}; // البيانات تغيّرت — أعد القراءة من جديد بدل استخدام المسح المؤقت القديم
+        toast('تم الحذف');
+        body.dataset.loaded = '';
+        body.innerHTML = `<div class="empty-state">جارٍ التحميل…</div>`;
+        await renderDataManageCategoryBody(body, cat);
+        body.dataset.loaded = '1';
+      });
+    });
+    return;
+  }
+  body.innerHTML = `
+    <div class="col gap-sm" id="dmGroups_${cat.key}"></div>
+    <div class="row gap-sm" style="margin-top:14px">
+      <button class="btn btn-primary btn-sm" type="button" data-dm-download="${cat.key}">⬇️ تنزيل المحدد</button>
+      <button class="btn btn-sm" style="background:#c0392b;color:#fff" type="button" data-dm-delete="${cat.key}">🗑️ حذف المحدد</button>
+      ${cat.extraButton ? `<button class="btn btn-gold btn-sm" type="button" data-dm-extra="${cat.key}">${cat.extraButton.label}</button>` : ''}
+    </div>
+  `;
+  const gwrap = document.getElementById(`dmGroups_${cat.key}`);
+  gwrap.innerHTML = groups.map((g,gi)=>`
+    <div class="dm-group" style="border:1px solid var(--line);border-radius:10px;padding:10px">
+      <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <button type="button" class="btn btn-ghost btn-sm" data-dm-group-toggle="${cat.key}_${gi}">▸ ${g.title} (${g.items.length})</button>
+        <div class="row gap-sm" style="align-items:center">
+          <label class="small"><input type="checkbox" data-dm-group-dl="${cat.key}_${gi}"> تنزيل الكل</label>
+          <label class="small"><input type="checkbox" data-dm-group-del="${cat.key}_${gi}"> حذف الكل</label>
+        </div>
+      </div>
+      <div data-dm-group-body="${cat.key}_${gi}" style="display:none;margin-top:10px"></div>
+    </div>`).join('');
+  groups.forEach((g,gi)=>{
+    const gid = `${cat.key}_${gi}`;
+    const toggleBtn = gwrap.querySelector(`[data-dm-group-toggle="${gid}"]`);
+    const gbody = gwrap.querySelector(`[data-dm-group-body="${gid}"]`);
+    toggleBtn.addEventListener('click', ()=>{
+      const opening = gbody.style.display==='none';
+      gbody.style.display = opening?'block':'none';
+      toggleBtn.textContent = toggleBtn.textContent.replace(/^[▸▾]/, opening?'▾':'▸');
+      if(opening && !gbody.dataset.loaded){
+        gbody.innerHTML = g.items.map(it=>`
+          <div class="row" style="justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px dashed var(--line)">
+            <span class="small">${it.date}</span>
+            <div class="row gap-sm">
+              <label class="small"><input type="checkbox" data-dm-item-dl="${gid}" value="${it.date}"> تنزيل</label>
+              <label class="small"><input type="checkbox" data-dm-item-del="${gid}" value="${it.date}"> حذف</label>
+            </div>
+          </div>`).join('');
+        gbody.dataset.loaded = '1';
+      }
+    });
+    const groupDlCb = gwrap.querySelector(`[data-dm-group-dl="${gid}"]`);
+    const groupDelCb = gwrap.querySelector(`[data-dm-group-del="${gid}"]`);
+    groupDlCb.addEventListener('change', ()=>{
+      if(!gbody.dataset.loaded) toggleBtn.click();
+      setTimeout(()=>{ Array.from(gwrap.querySelectorAll(`[data-dm-item-dl="${gid}"]`)).forEach(cb=>cb.checked = groupDlCb.checked); }, 0);
+    });
+    groupDelCb.addEventListener('change', ()=>{
+      if(!gbody.dataset.loaded) toggleBtn.click();
+      setTimeout(()=>{ Array.from(gwrap.querySelectorAll(`[data-dm-item-del="${gid}"]`)).forEach(cb=>cb.checked = groupDelCb.checked); }, 0);
+    });
+  });
+  function collectSelected(mode){
+    const selected = [];
+    groups.forEach((g,gi)=>{
+      const gid = `${cat.key}_${gi}`;
+      const groupCb = gwrap.querySelector(`[data-dm-group-${mode}="${gid}"]`);
+      if(groupCb && groupCb.checked){ g.items.forEach(it=>selected.push(it)); return; }
+      Array.from(gwrap.querySelectorAll(`[data-dm-item-${mode}="${gid}"]:checked`)).forEach(cb=>{
+        const it = g.items.find(x=>x.date===cb.value);
+        if(it) selected.push(it);
+      });
+    });
+    return selected;
+  }
+  document.querySelector(`[data-dm-download="${cat.key}"]`).addEventListener('click', async ()=>{
+    const sel = collectSelected('dl');
+    if(!sel.length){ toast('لم تحدد أي عنصر للتنزيل','err'); return; }
+    await cat.onDownload(sel);
+    toast('تم تنزيل الملف');
+  });
+  document.querySelector(`[data-dm-delete="${cat.key}"]`).addEventListener('click', async ()=>{
+    const sel = collectSelected('del');
+    if(!sel.length){ toast('لم تحدد أي عنصر للحذف','err'); return; }
+    if(!confirm(`سيتم حذف ${sel.length} عنصر نهائيًا من «${cat.label()}». هل أنت متأكد؟ يُفضّل تنزيل نسخة قبل المتابعة.`)) return;
+    await cat.onDelete(sel);
+    dmCache = {}; // البيانات تغيّرت — أعد القراءة من جديد بدل استخدام المسح المؤقت القديم
+    toast('تم الحذف');
+    body.dataset.loaded = '';
+    body.innerHTML = `<div class="empty-state">جارٍ التحميل…</div>`;
+    await renderDataManageCategoryBody(body, cat);
+    body.dataset.loaded = '1';
+  });
+  if(cat.extraButton){
+    document.querySelector(`[data-dm-extra="${cat.key}"]`).addEventListener('click', async ()=>{
+      const sel = collectSelected('dl');
+      if(!sel.length){ toast('لم تحدد أي عنصر','err'); return; }
+      await cat.extraButton.fn(sel);
+      toast('تم تنزيل الملف');
+    });
+  }
+}
+
 
 /* ---- users tab ---- */
 function renderAdminUsers(main){
@@ -1941,14 +3268,14 @@ async function renderLiveReportDetail(main, mosqueId){
     if(state.presenceSiteToggle[mosqueId]===false){ el.innerHTML = ''; return; }
     const siteUsers = state.users.filter(u=>u.mosqueId===mosqueId && !state.presenceHidden[u.id]);
     const onlineOnes = [];
-    for(const u of siteUsers){
+    await Promise.all(siteUsers.map(async u=>{
       const raw = await storageGet('skq_presence__'+u.id);
       const p = raw ? safeParse(raw, null) : null;
       if(p && (Date.now() - new Date(p.lastSeen).getTime()) < 30000){
         const jobTitle = (u.role==='recorder') ? state.roleLabels.recorder : state.roleLabels.supervisor;
         onlineOnes.push(`${u.name} (${jobTitle})`);
       }
-    }
+    }));
     el.innerHTML = onlineOnes.length
       ? `<span style="color:var(--green);font-weight:700">● متصل</span> <span class="muted small">— ${onlineOnes.join('، ')}</span>`
       : `<span class="muted small">لا يوجد متصلون الآن من هذا الموقع.</span>`;
@@ -2744,8 +4071,7 @@ async function loadAndRenderReport(approvalMode){
     <div class="card" style="margin-bottom:16px;border:2px solid var(--gold);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
       <span>⏳ هذا التقرير بانتظار اعتمادك.</span>
       <button class="btn btn-primary btn-sm" id="approveReportBtn">✅ اعتماد هذا التقرير</button>
-    </div>` : (approvalMode ? `<div class="card" style="margin-bottom:16px;border:2px solid var(--green)"><span class="badge badge-ok">✔️ تم اعتماد هذا التقرير${rec.gsApprovedAt?` — ${formatTime12(rec.gsApprovedAt)}`:''}</span></div>` : '');
-  const cfg = getFormConfig(state.reportMosque);
+    </div>` : (approvalMode ? `<div class="card" style="margin-bottom:16px;border:2px solid var(--green)"><span class="badge badge-ok">✔️ تم اعتماد هذا التقرير${rec.gsApprovedAt?` — ${formatTime12(rec.gsApprovedAt)}`:''}</span></div>` : '');  const cfg = getFormConfig(state.reportMosque);
   const fr = cfg.fridge, tk = cfg.tankers;
   const totalWithdrawn = (rec.withdrawals||[]).reduce((s,w)=>s+(Number(w.qty)||0),0);
   const withdrawn330 = withdrawnBySize(rec, '330');
@@ -2809,7 +4135,7 @@ async function loadAndRenderReport(approvalMode){
         ${headerRows}
       </table>
     </div>`;
-  content.innerHTML = approveBannerHTML + headerTable + `
+  content.innerHTML = `<div id="approveBannerWrap">${approveBannerHTML}</div>` + headerTable + `
     <div class="row gap-lg wrap" style="align-items:stretch;margin-bottom:22px">
       ${fr.visible!==false ? `
       <div class="card grow" style="min-width:280px">
@@ -2930,13 +4256,18 @@ async function loadAndRenderReport(approvalMode){
   });
   const approveBtn = document.getElementById('approveReportBtn');
   if(approveBtn){
-    approveBtn.addEventListener('click', async ()=>{
+    approveBtn.addEventListener('click', ()=>{
       rec.gsApproved = true;
       rec.gsApprovedAt = nowTime12raw();
       rec.gsApprovedBy = state.currentUser.name;
-      const ok = await storageSet(recKey(state.reportMosque, state.reportDate), JSON.stringify(rec));
-      if(ok){ toast('تم اعتماد التقرير'); await bumpNotif(['reports','attendlog','monthly']); } else toast('تعذر الحفظ، حاول مرة أخرى','err');
-      loadAndRenderReport(approvalMode);
+      const wrap = document.getElementById('approveBannerWrap');
+      if(wrap) wrap.innerHTML = `<div class="card" style="margin-bottom:16px;border:2px solid var(--green)"><span class="badge badge-ok">✔️ تم اعتماد هذا التقرير${rec.gsApprovedAt?` — ${formatTime12(rec.gsApprovedAt)}`:''}</span></div>`;
+      toast('تم اعتماد التقرير');
+      (async ()=>{
+        const ok = await storageSet(recKey(state.reportMosque, state.reportDate), JSON.stringify(rec));
+        if(ok) await bumpNotif(['reports','attendlog','monthly']);
+        else toast('تعذر الحفظ، حاول مرة أخرى','err');
+      })();
     });
   }
 }
@@ -3047,12 +4378,13 @@ function mosquesForRange(months){
     return true;
   });
 }
-async function loadMonthData(yyyymm){
+async function loadMonthData(yyyymm, mosqueList){
+  const list = mosqueList || MOSQUES;
   const total = daysInMonth(yyyymm);
   const data = {};
-  for(const m of MOSQUES){ data[m.id] = {}; }
-  for(const m of MOSQUES){
-    const batch = await storageGetPrefix(recKey(m.id, ''));
+  await Promise.all(list.map(async m=>{
+    data[m.id] = {};
+    const batch = await storageGetPrefix(recKey(m.id, yyyymm)); // مقيّد بهذا الشهر فقط بدل كامل تاريخ الموقع — أسرع بكثير
     for(let d=1; d<=total; d++){
       const dateStr = monthDateStr(yyyymm, d);
       if(batch){
@@ -3062,7 +4394,7 @@ async function loadMonthData(yyyymm){
         data[m.id][dateStr] = await loadRecord(m.id, dateStr);
       }
     }
-  }
+  }));
   return data;
 }
 function cartonsForRecordBySize(rec, size){
@@ -3168,9 +4500,7 @@ function renderRangePills(){
   const options = [
     {v:'current',label:state.monthlyModeLabels.current},
     {v:'quarter',label:state.monthlyModeLabels.quarter},
-    {v:'half',label:state.monthlyModeLabels.half},
     {v:'year',label:state.monthlyModeLabels.year},
-    {v:'manual',label:state.monthlyModeLabels.manual},
   ];
   wrap.innerHTML = options.map(o=>`
     <button type="button" class="btn ${state.monthlyMode===o.v?'btn-primary':'btn-ghost'} btn-sm" data-mode-pill="${o.v}">${o.label}</button>
@@ -3277,8 +4607,8 @@ async function loadAndRenderMonthly(){
   content.innerHTML = `<div class="empty-state">جارٍ التحميل…</div>`;
   const yyyymm = state.reportMonth;
   const total = daysInMonth(yyyymm);
-  const data = await loadMonthData(yyyymm);
   const monthMosques = sortMosquesByOrder(mosquesForMonth(yyyymm), state.monthlyMosqueOrder);
+  const data = await loadMonthData(yyyymm, monthMosques);
   const packetMult = state.monthlyBottleSizeFilter ? bottlesPerCartonForSize(state.monthlyBottleSizeFilter) : 40;
 
   // build 5 week-chunks of 7 days starting at day 1
@@ -3314,12 +4644,15 @@ async function loadAndRenderMonthly(){
     if(!dateStr) return 0;
     const rec = data[mosqueId][dateStr];
     if(!rec || !rec.withdrawals || !rec.gsApproved) return 0;
+    if(state.monthlyBottleSizeFilter) return rec.withdrawals.filter(w=>(w.bottleSize||'330')===state.monthlyBottleSizeFilter).reduce((s,w)=>s+(Number(w.qty)||0),0);
     return rec.withdrawals.reduce((s,w)=>s+(Number(w.qty)||0),0);
   }
   function tankerOnlyFor(mosqueId, dateStr){
     if(!dateStr) return 0;
     const rec = data[mosqueId][dateStr];
-    return (rec && rec.gsApproved) ? (Number(rec.qtyDistributed)||0) : 0;
+    if(!rec || !rec.gsApproved) return 0;
+    if(state.monthlyBottleSizeFilter) return (rec.tankerWithdrawals||[]).filter(w=>(w.bottleSize||'330')===state.monthlyBottleSizeFilter).reduce((s,w)=>s+(Number(w.qty)||0),0);
+    return Number(rec.qtyDistributed)||0;
   }
   function fridgeBottlesFor(mosqueId, dateStr){
     if(!dateStr) return 0;
@@ -3722,6 +5055,7 @@ async function loadAndRenderRange(){
     return;
   }
   const rangeMosques = mosquesForRange(months);
+  const cartonsArchive = await loadCartonsArchive(); // كميات محذوفة من الجدول الشهري لكنها تبقى محسوبة هنا
 
   // load and sum data for every selected month
   const totals = {}; // [mosqueId] = cartons (combined)
@@ -3729,7 +5063,7 @@ async function loadAndRenderRange(){
   const packets = {}, fridgePackets = {}; // عدد عبوات دقيق (لكل حجم على حدة، مع مراعاة الخليط بين المقاسين)
   rangeMosques.forEach(m=>{ totals[m.id] = 0; fridgeTotals[m.id] = 0; tankerTotals[m.id] = 0; packets[m.id] = 0; fridgePackets[m.id] = 0; });
   for(const yyyymm of months){
-    const data = await loadMonthData(yyyymm);
+    const data = await loadMonthData(yyyymm, rangeMosques);
     const total = daysInMonth(yyyymm);
     rangeMosques.forEach(m=>{
       for(let d=1; d<=total; d++){
@@ -3738,8 +5072,9 @@ async function loadAndRenderRange(){
         const approvedRec = (rec && rec.gsApproved) ? rec : null;
         totals[m.id] += monthlyDistributedFromRecord(approvedRec);
         if(approvedRec){
-          fridgeTotals[m.id] += (approvedRec.withdrawals||[]).reduce((s,w)=>s+(Number(w.qty)||0),0);
-          tankerTotals[m.id] += Number(approvedRec.qtyDistributed)||0;
+          const sizeFilter = state.monthlyBottleSizeFilter;
+          fridgeTotals[m.id] += (approvedRec.withdrawals||[]).filter(w=> !sizeFilter || (w.bottleSize||'330')===sizeFilter).reduce((s,w)=>s+(Number(w.qty)||0),0);
+          tankerTotals[m.id] += (approvedRec.tankerWithdrawals||[]).filter(w=> !sizeFilter || (w.bottleSize||'330')===sizeFilter).reduce((s,w)=>s+(Number(w.qty)||0),0);
           if(state.monthlyBottleSizeFilter){
             packets[m.id] += bottlesForRecordBySize(approvedRec, state.monthlyBottleSizeFilter);
             fridgePackets[m.id] += (approvedRec.withdrawals||[]).filter(w=>(w.bottleSize||'330')===state.monthlyBottleSizeFilter).reduce((s,w)=>s+bottlesForEntry(w),0);
@@ -3748,6 +5083,23 @@ async function loadAndRenderRange(){
             fridgePackets[m.id] += (approvedRec.withdrawals||[]).reduce((s,w)=>s+bottlesForEntry(w),0);
           }
         }
+      }
+    });
+    // إضافة أي كميات كانت مؤرشفة (حُذف الجدول الشهري لها) حتى تبقى محسوبة في هذا التجميع
+    rangeMosques.forEach(m=>{
+      const arc = archivedCartonsFor(cartonsArchive, m.id, yyyymm, state.monthlyBottleSizeFilter);
+      totals[m.id] += arc.fridge + arc.tanker;
+      fridgeTotals[m.id] += arc.fridge;
+      tankerTotals[m.id] += arc.tanker;
+      const mult330 = 40, mult200 = 48;
+      if(state.monthlyBottleSizeFilter){
+        const mult = state.monthlyBottleSizeFilter==='200' ? mult200 : mult330;
+        packets[m.id] += (arc.fridge+arc.tanker) * mult;
+        fridgePackets[m.id] += arc.fridge * mult;
+      } else {
+        const eAll = (cartonsArchive[m.id] && cartonsArchive[m.id][yyyymm]) ? cartonsArchive[m.id][yyyymm] : {fridge330:0,fridge200:0,tanker330:0,tanker200:0};
+        packets[m.id] += eAll.fridge330*mult330 + eAll.fridge200*mult200 + eAll.tanker330*mult330 + eAll.tanker200*mult200;
+        fridgePackets[m.id] += eAll.fridge330*mult330 + eAll.fridge200*mult200;
       }
     });
   }
@@ -4068,7 +5420,7 @@ async function loadAndRenderIndicator(mosqueId){
   // build ordered list of dates with per-mosque daily quantity
   const days = [];
   for(const yyyymm of months){
-    const data = await loadMonthData(yyyymm);
+    const data = await loadMonthData(yyyymm, rangeMosques);
     const total = daysInMonth(yyyymm);
     for(let d=1; d<=total; d++){
       const dateStr = monthDateStr(yyyymm, d);
@@ -4089,8 +5441,8 @@ async function loadAndRenderIndicator(mosqueId){
 }
 async function avgCollaboratorsForMosque(mosqueId, months){
   let daySum = 0, dayCount = 0;
-  const batch = await storageGetPrefix(recKey(mosqueId, ''));
   for(const yyyymm of months){
+    const batch = await storageGetPrefix(recKey(mosqueId, yyyymm)); // مقيّد بالشهر بدل كامل التاريخ
     const total = daysInMonth(yyyymm);
     for(let d=1; d<=total; d++){
       const dateStr = monthDateStr(yyyymm, d);
@@ -4128,8 +5480,10 @@ async function loadAndRenderIndicatorAll(){
   }
 
   const days = [];
+  const presentSum = {}, presentCount = {};
+  rangeMosques.forEach(mm=>{ presentSum[mm.id]=0; presentCount[mm.id]=0; });
   for(const yyyymm of months){
-    const data = await loadMonthData(yyyymm);
+    const data = await loadMonthData(yyyymm, rangeMosques);
     const total = daysInMonth(yyyymm);
     for(let d=1; d<=total; d++){
       const dateStr = monthDateStr(yyyymm, d);
@@ -4139,16 +5493,20 @@ async function loadAndRenderIndicatorAll(){
         values[mm.id] = totalDistributedFromRecord(rec);
         values330[mm.id] = cartonsForRecordBySize(rec, '330');
         values200[mm.id] = cartonsForRecordBySize(rec, '200');
+        if(rec && rec.savedAt){
+          presentSum[mm.id] += Object.values(rec.attendance||{}).filter(v=>v==='present').length;
+          presentCount[mm.id] += 1;
+        }
       });
       days.push({date: dateStr, values, values330, values200});
     }
   }
 
   const collabInfo = {};
-  for(const mm of rangeMosques){
-    const avg = await avgCollaboratorsForMosque(mm.id, months);
+  rangeMosques.forEach(mm=>{
+    const avg = presentCount[mm.id]>0 ? (presentSum[mm.id]/presentCount[mm.id]) : 0;
     collabInfo[mm.id] = {label:'متوسط المتعاونين (الفترة)', value: avg.toFixed(1)};
-  }
+  });
 
   renderIndicatorChart(content, rangeMosques, days, collabInfo);
 }
@@ -4198,18 +5556,30 @@ function renderIndicatorChart(content, rangeMosques, days, collabInfo){
   const legend = `<div class="indicator-legend">${rangeMosques.map(m=>`
     <span class="leg-item"><span class="leg-dot" style="background:${m.color}"></span>${m.name}</span>`).join('')}</div>`;
 
-  // max/min per mosque across the selected period
+  // max/min per mosque across the selected period — يُستبعد يوم عدم التوزيع (0) من حساب "أقل كمية موزعة" حتى تكون له قيمة فعلية دائمًا لا صفرًا ثابتًا
   const maxMinHTML = rangeMosques.map(m=>{
-    let maxDay = days[0], minDay = days[0];
-    let maxDay330 = days[0], minDay330 = days[0], maxDay200 = days[0], minDay200 = days[0];
+    let maxDay = null, minDay = null;
+    let maxDay330 = null, minDay330 = null, maxDay200 = null, minDay200 = null;
     days.forEach(d=>{
-      if(d.values[m.id] > maxDay.values[m.id]) maxDay = d;
-      if(d.values[m.id] < minDay.values[m.id]) minDay = d;
-      if(d.values330[m.id] > maxDay330.values330[m.id]) maxDay330 = d;
-      if(d.values330[m.id] < minDay330.values330[m.id]) minDay330 = d;
-      if(d.values200[m.id] > maxDay200.values200[m.id]) maxDay200 = d;
-      if(d.values200[m.id] < minDay200.values200[m.id]) minDay200 = d;
+      if(d.values[m.id] > 0){
+        if(!maxDay || d.values[m.id] > maxDay.values[m.id]) maxDay = d;
+        if(!minDay || d.values[m.id] < minDay.values[m.id]) minDay = d;
+      }
+      if(d.values330[m.id] > 0){
+        if(!maxDay330 || d.values330[m.id] > maxDay330.values330[m.id]) maxDay330 = d;
+        if(!minDay330 || d.values330[m.id] < minDay330.values330[m.id]) minDay330 = d;
+      }
+      if(d.values200[m.id] > 0){
+        if(!maxDay200 || d.values200[m.id] > maxDay200.values200[m.id]) maxDay200 = d;
+        if(!minDay200 || d.values200[m.id] < minDay200.values200[m.id]) minDay200 = d;
+      }
     });
+    if(!maxDay) maxDay = days[0]; // احتياطًا فقط عند عدم وجود أي توزيع إطلاقًا خلال الفترة
+    if(!minDay) minDay = days[0];
+    if(!maxDay330) maxDay330 = days[0];
+    if(!minDay330) minDay330 = days[0];
+    if(!maxDay200) maxDay200 = days[0];
+    if(!minDay200) minDay200 = days[0];
     const fmt = d => {
       const parts = [];
       if(state.indicatorLabels.showDay) parts.push(dayNameOnly(d.date));
@@ -6271,6 +7641,7 @@ let liveSaveInterval = null;
 let withdrawSyncInterval = null;
 
 let recorderRecord = null;
+let apQtyDraft = {}; // يحفظ ما كُتب في حقول "إضافة كمية" لكل نقطة فعالة مؤقتًا، حتى لا يختفي الرقم عند تغيير المقاس/النوع أو أي إعادة رسم للقائمة قبل الضغط على "إضافة"
 let recorderRefreshInterval = null;
 function gsSideLabel(key){
   if(key==='recorderusers') return 'مستخدمين ' + state.roleLabels.recorder;
@@ -6579,11 +7950,11 @@ async function renderGsSupplierOrderPage(main){
   async function refresh(justUpdate){
     await loadMosques(); // pick up supplierShortfall changes made by المورد in another session
     const recs = {}, lives = {}, cfgs = {};
-    for(const m of sites){
+    await Promise.all(sites.map(async m=>{
       recs[m.id] = await loadRecord(m.id, state.gsOrderDates[m.id]);
       cfgs[m.id] = getFormConfig(m.id);
       lives[m.id] = await computeLiveSupplierQty(m.id, state.gsOrderDates[m.id]); // informational only, never auto-fills the manual quantity
-    }
+    }));
     if(justUpdate){
       const pendingChanged = sites.some(m=>{
         const rec = recs[m.id];
@@ -6796,12 +8167,12 @@ async function confirmSupplierOrder(mosqueId, dateStr, manualQty){
   if(!m) return;
   const live = await computeLiveSupplierQty(mosqueId, dateStr);
   // mark every contributing day as claimed up to its current withdrawal amount — any withdrawal added to that day AFTER this point becomes immediately available again
-  for(const d of live.days){
+  await Promise.all(live.days.map(async d=>{
     const r = await loadRecord(mosqueId, d.date);
     const dayWithdrawn = (r.withdrawals||[]).reduce((s,w)=>s+(Number(w.qty)||0),0);
     r.orderClaimedQty = dayWithdrawn;
     await storageSet(recKey(mosqueId, d.date), JSON.stringify(r));
-  }
+  }));
   const rec = await loadRecord(mosqueId, dateStr);
   rec.supplierOrderConfirmed = true;
   rec.orderPendingGsApproval = false;
@@ -6837,11 +8208,11 @@ async function cancelSupplierOrder(mosqueId, dateStr, cancelledBy){
   const rec = await loadRecord(mosqueId, dateStr);
   if(rec.supplierOrderReceived){ toast('لا يمكن إلغاء الطلب بعد قبوله من المورد','err'); return; }
   const claimedDays = rec.orderClaimedDays || [];
-  for(const d of claimedDays){
+  await Promise.all(claimedDays.map(async d=>{
     const r = await loadRecord(mosqueId, d);
     r.orderClaimedQty = 0; // unclaim — whatever is withdrawn there becomes available again, merging back into the live total
     await storageSet(recKey(mosqueId, d), JSON.stringify(r));
-  }
+  }));
   const m = mosqueById(mosqueId);
   if(m && claimedDays.length){
     const earliestUnclaimed = claimedDays.reduce((a,b)=> a<b?a:b);
@@ -6857,7 +8228,7 @@ async function computeMonthlySupplierTotal(mosqueId, yyyymm){
   const totalDays = daysInMonth(yyyymm);
   const lastDay = (yyyymm === state.today.slice(0,7)) ? Number(state.today.slice(8,10)) : totalDays;
   let sum = 0, sum330 = 0, sum200 = 0;
-  const batch = await storageGetPrefix(recKey(mosqueId, ''));
+  const batch = await storageGetPrefix(recKey(mosqueId, yyyymm)); // مقيّد بالشهر بدل كامل التاريخ
   for(let d=1; d<=lastDay; d++){
     const ds = monthDateStr(yyyymm, d);
     let rec;
@@ -6932,10 +8303,20 @@ function supplierOrdersLogHTML(orders, L){
 }
 async function getSupplierOrdersInRange(mosqueId, startDate, endDate){
   const orders = [];
+  const months = new Set([startDate.slice(0,7), endDate.slice(0,7)]);
+  const batches = {};
+  for(const yyyymm of months){ batches[yyyymm] = await storageGetPrefix(recKey(mosqueId, yyyymm)); }
   let cursor = startDate;
   let guard = 0;
   while(cursor <= endDate && guard < 31){
-    const rec = await loadRecord(mosqueId, cursor);
+    const batch = batches[cursor.slice(0,7)];
+    let rec;
+    if(batch){
+      const raw = batch[recKey(mosqueId, cursor)];
+      rec = raw ? (safeParse(raw, null) || defaultRecordShape()) : defaultRecordShape();
+    } else {
+      rec = await loadRecord(mosqueId, cursor);
+    }
     if(rec.supplierOrderConfirmed || rec.orderCancelled){
       orders.push({date: cursor, qty: rec.orderRequestedQty||0, qty330: rec.orderRequestedQty330||0, qty200: rec.orderRequestedQty200||0, deliveredQty: rec.supplierDeliveredQty||0, deliveredQty330: rec.supplierDeliveredQty330||0, deliveredQty200: rec.supplierDeliveredQty200||0, status: supplierOrderStatusLabel(rec), requestedTime: rec.orderRequestedTime||'', approvedTime: rec.orderApprovedTime||'', receivedTime: rec.supplierOrderReceivedTime||'', executedTime: rec.supplierExecutedTime||'', saved: !!rec.supplierRecordSaved});
     }
@@ -6952,10 +8333,10 @@ async function renderAdminSupplierLog(main){
   const isCurrentWeek = endDate === state.today;
   const sites = activeMosques();
   const allOrders = [];
-  for(const m of sites){
+  await Promise.all(sites.map(async m=>{
     const orders = await getSupplierOrdersInRange(m.id, startDate, endDate);
     orders.forEach(o=>allOrders.push(Object.assign({mosqueName:m.name, mosqueColor:m.color}, o)));
-  }
+  }));
   allOrders.sort((a,b)=> b.date===a.date ? a.mosqueName.localeCompare(b.mosqueName,'ar') : (b.date>a.date?1:-1));
   main.innerHTML = `
     <h2>${state.sidebarLabels.supplierlog}</h2>
@@ -8090,7 +9471,7 @@ async function renderRecorderMain(){
         document.getElementById(`new_${key}_photo_status`).textContent = '📷 تم إرفاق صورة';
       }catch(err){ toast('تعذر رفع الصورة','err'); }
     });
-    document.getElementById(`new_${key}_add`).addEventListener('click', async ()=>{
+    document.getElementById(`new_${key}_add`).addEventListener('click', ()=>{
       const note = document.getElementById(`new_${key}_note`).value.trim();
       const rawQty = Number(document.getElementById(`new_${key}_qty`).value)||0;
       if(!rawQty){ toast('أدخل الكمية','err'); return; }
@@ -8106,34 +9487,44 @@ async function renderRecorderMain(){
         createdBy: state.currentUser.id, createdByName: state.currentUser.name,
         time: nowTime12(),
       };
-      // re-fetch latest to avoid clobbering other recorders' concurrent additions
-      const latest = await loadRecord(mosqueId, state.today);
-      if(!latest.withdrawals) latest.withdrawals = [];
-      if(!latest.tankerWithdrawals) latest.tankerWithdrawals = [];
-      latest[key].push(entry);
-      const ok = await storageSet(recKey(mosqueId, state.today), JSON.stringify(latest));
-      if(ok){ toast('تمت إضافة السحبة'); await bumpNotifSite(key==='tankerWithdrawals' ? ['livereports'] : ['livereports','indicator'], mosqueId); } else toast('تعذر الحفظ، حاول مرة أخرى','err');
-      recorderRecord = latest;
+      if(!recorderRecord.withdrawals) recorderRecord.withdrawals = [];
+      if(!recorderRecord.tankerWithdrawals) recorderRecord.tankerWithdrawals = [];
+      recorderRecord[key].push(entry);
       renderRecorderLimitTarget(cfg, recorderRecord);
       renderRecorderLists(recorderRecord);
+      toast('تمت إضافة السحبة');
       // clear only this section's own new-entry fields, leave the OTHER section's in-progress input untouched
       document.getElementById(`new_${key}_note`).value = '';
       document.getElementById(`new_${key}_qty`).value = '';
       document.getElementById(`new_${key}_photo_status`).textContent = '';
       pendingPhoto = null;
+      // احفظ في الخلفية مع إعادة الجلب أولًا حتى لا تُفقد إضافات متزامنة من مسجّلين آخرين
+      (async ()=>{
+        const latest = await loadRecord(mosqueId, state.today);
+        if(!latest.withdrawals) latest.withdrawals = [];
+        if(!latest.tankerWithdrawals) latest.tankerWithdrawals = [];
+        latest[key].push(entry);
+        const ok = await storageSet(recKey(mosqueId, state.today), JSON.stringify(latest));
+        if(ok) await bumpNotifSite(key==='tankerWithdrawals' ? ['livereports'] : ['livereports','indicator'], mosqueId);
+        else toast('تعذر الحفظ، حاول مرة أخرى','err');
+      })();
     });
   });
 
   if(recorderRefreshInterval) clearInterval(recorderRefreshInterval);
   recorderRefreshInterval = setInterval(async ()=>{
     if(!document.getElementById('recMain')) return;
+    const active = document.activeElement;
+    const isTyping = active && (active.tagName==='INPUT' || active.tagName==='SELECT' || active.tagName==='TEXTAREA');
     const latest = await loadRecord(mosqueId, state.today);
     if(!latest.withdrawals) latest.withdrawals = [];
     if(!latest.tankerWithdrawals) latest.tankerWithdrawals = [];
     recorderRecord = latest;
     await loadFormConfigs();
-    renderRecorderLimitTarget(getFormConfig(mosqueId), recorderRecord);
-    renderRecorderLists(recorderRecord);
+    if(!isTyping){
+      renderRecorderLimitTarget(getFormConfig(mosqueId), recorderRecord);
+      renderRecorderLists(recorderRecord);
+    }
     const apCard = document.getElementById('recActionPointsCard');
     if(!apCard || !apCard.contains(document.activeElement)) renderRecorderActionPoints(getFormConfig(mosqueId), recorderRecord);
   }, 4000);
@@ -8188,14 +9579,14 @@ function renderRecorderActionPoints(cfg, rec){
               </div>`).join('') : `<p class="muted small">لا توجد كميات مسجّلة لهذه النقطة بعد.</p>`}
             <p class="small" style="margin:8px 0 0"><strong>الإجمالي: ${total} كرتون</strong></p>
             <div class="row gap-sm" style="margin-top:8px;align-items:center;flex-wrap:wrap">
-              <input type="number" min="0" class="input" style="width:90px" placeholder="الكمية" id="apQty_${p.id}">
+              <input type="number" min="0" class="input" style="width:90px" placeholder="الكمية" id="apQty_${p.id}" value="${(apQtyDraft[p.id]&&apQtyDraft[p.id].qty)||''}">
               <select class="input" style="width:95px" id="apUnit_${p.id}">
-                <option value="carton">كرتون</option>
-                <option value="bundle">ربطة</option>
+                <option value="carton" ${(!apQtyDraft[p.id]||apQtyDraft[p.id].unit==='carton')?'selected':''}>كرتون</option>
+                <option value="bundle" ${(apQtyDraft[p.id]&&apQtyDraft[p.id].unit==='bundle')?'selected':''}>ربطة</option>
               </select>
               <select class="input" style="width:95px" id="apSize_${p.id}" title="حجم العبوة">
-                <option value="330">330 مل</option>
-                <option value="200">200 مل</option>
+                <option value="330" ${(!apQtyDraft[p.id]||apQtyDraft[p.id].size==='330')?'selected':''}>330 مل</option>
+                <option value="200" ${(apQtyDraft[p.id]&&apQtyDraft[p.id].size==='200')?'selected':''}>200 مل</option>
               </select>
               <button class="btn btn-primary btn-sm" data-ap-add="${p.id}">+ إضافة كمية</button>
             </div>
@@ -8206,43 +9597,65 @@ function renderRecorderActionPoints(cfg, rec){
     }).join('') : `<p class="muted small">لا توجد نقاط فعالة مضافة من المشرف بعد.</p>`}
   `;
   Array.from(wrap.querySelectorAll('[data-ap-add]')).forEach(b=>{
-    b.addEventListener('click', async ()=>{
-      const pointId = b.dataset.apAdd;
-      const qtyEl = document.getElementById(`apQty_${pointId}`);
-      const unitEl = document.getElementById(`apUnit_${pointId}`);
-      const sizeEl = document.getElementById(`apSize_${pointId}`);
+    const pointId = b.dataset.apAdd;
+    const qtyEl = document.getElementById(`apQty_${pointId}`);
+    const unitEl = document.getElementById(`apUnit_${pointId}`);
+    const sizeEl = document.getElementById(`apSize_${pointId}`);
+    function saveDraft(){ apQtyDraft[pointId] = {qty: qtyEl.value, unit: unitEl.value, size: sizeEl.value}; }
+    if(qtyEl) qtyEl.addEventListener('input', saveDraft);
+    if(unitEl) unitEl.addEventListener('change', saveDraft);
+    if(sizeEl) sizeEl.addEventListener('change', saveDraft);
+    b.addEventListener('click', ()=>{
       const rawQty = Number(qtyEl.value)||0;
       if(!rawQty){ toast('أدخل الكمية','err'); return; }
       const unit = unitEl ? unitEl.value : 'carton';
       const bottleSize = sizeEl ? sizeEl.value : '330';
       const qty = unit==='bundle' ? rawQty/bpc : rawQty;
       const mosqueId = state.currentUser.mosqueId;
-      const latest = await loadRecord(mosqueId, state.today);
-      if(!latest.actionPoints) latest.actionPoints = [];
-      const point = latest.actionPoints.find(p=>p.id===pointId);
+      if(!recorderRecord.actionPoints) recorderRecord.actionPoints = [];
+      const point = recorderRecord.actionPoints.find(p=>p.id===pointId);
       if(!point){ toast('تعذر إيجاد النقطة','err'); return; }
       if(!point.withdrawals) point.withdrawals = [];
-      point.withdrawals.push({id:'apw_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), qty, unit, rawQty, bottleSize, time: nowTime12(), by: state.currentUser.name, createdBy: state.currentUser.id});
-      const ok = await storageSet(recKey(mosqueId, state.today), JSON.stringify(latest));
-      if(ok){ toast('تمت إضافة الكمية'); await bumpNotifSite(['livereports','indicator'], mosqueId); } else toast('تعذر الحفظ، حاول مرة أخرى','err');
-      recorderRecord = latest;
+      const entry = {id:'apw_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), qty, unit, rawQty, bottleSize, time: nowTime12(), by: state.currentUser.name, createdBy: state.currentUser.id};
+      point.withdrawals.push(entry);
+      delete apQtyDraft[pointId];
       renderRecorderActionPoints(cfg, recorderRecord);
+      toast('تمت إضافة الكمية');
+      (async ()=>{
+        const latest = await loadRecord(mosqueId, state.today);
+        if(!latest.actionPoints) latest.actionPoints = [];
+        const latestPoint = latest.actionPoints.find(p=>p.id===pointId);
+        if(latestPoint){
+          if(!latestPoint.withdrawals) latestPoint.withdrawals = [];
+          latestPoint.withdrawals.push(entry);
+          const ok = await storageSet(recKey(mosqueId, state.today), JSON.stringify(latest));
+          if(ok) await bumpNotifSite(['livereports','indicator'], mosqueId);
+          else toast('تعذر الحفظ، حاول مرة أخرى','err');
+        }
+      })();
     });
   });
   Array.from(wrap.querySelectorAll('[data-ap-qty-remove]')).forEach(b=>{
-    b.addEventListener('click', async ()=>{
+    b.addEventListener('click', ()=>{
       const [pointId, wid] = b.dataset.apQtyRemove.split(':');
       const mosqueId = state.currentUser.mosqueId;
-      const latest = await loadRecord(mosqueId, state.today);
-      const point = (latest.actionPoints||[]).find(p=>p.id===pointId);
+      const point = (recorderRecord.actionPoints||[]).find(p=>p.id===pointId);
       if(!point || !point.withdrawals) return;
       const entry = point.withdrawals.find(w=>w.id===wid);
       if(!entry || entry.createdBy!==state.currentUser.id){ toast('يمكنك حذف الكميات التي أضفتها أنت فقط','err'); return; }
       point.withdrawals = point.withdrawals.filter(w=>w.id!==wid);
-      const ok = await storageSet(recKey(mosqueId, state.today), JSON.stringify(latest));
-      if(ok){ toast('تم الحذف'); await bumpNotifSite(['livereports','indicator'], mosqueId); } else toast('تعذر الحفظ، حاول مرة أخرى','err');
-      recorderRecord = latest;
       renderRecorderActionPoints(cfg, recorderRecord);
+      toast('تم الحذف');
+      (async ()=>{
+        const latest = await loadRecord(mosqueId, state.today);
+        const latestPoint = (latest.actionPoints||[]).find(p=>p.id===pointId);
+        if(latestPoint && latestPoint.withdrawals){
+          latestPoint.withdrawals = latestPoint.withdrawals.filter(w=>w.id!==wid);
+          const ok = await storageSet(recKey(mosqueId, state.today), JSON.stringify(latest));
+          if(ok) await bumpNotifSite(['livereports','indicator'], mosqueId);
+          else toast('تعذر الحفظ، حاول مرة أخرى','err');
+        }
+      })();
     });
   });
 }
@@ -9449,7 +10862,7 @@ function renderActionPoints(){
             <p class="small muted" style="margin:0">الكميات المسحوبة لهذه النقطة</p>
             ${withdrawals.length ? withdrawals.map(w=>`
               <div class="row gap-sm" style="align-items:center;justify-content:space-between">
-                <span>${w.qty} كرتون${w.unit==='bundle'?` (${w.rawQty} ربطة)`:''}</span>
+                <span>${w.qty} كرتون${w.unit==='bundle'?` (${w.rawQty} ربطة)`:''} — ${(w.bottleSize||'330')} مل</span>
                 <span class="row gap-sm" style="align-items:center">
                   <span class="muted small">${w.by||''} — ${w.time||''}</span>
                   <button type="button" class="icon-btn" data-point-qty-remove="${p.id}:${w.id}" title="حذف">✕</button>
@@ -9457,10 +10870,14 @@ function renderActionPoints(){
               </div>`).join('') : `<p class="muted small">لا توجد كميات مسجّلة بعد.</p>`}
             <p class="small" style="margin:4px 0 0"><strong>الإجمالي: ${total} كرتون</strong></p>
             <div class="row gap-sm" style="margin-top:6px;align-items:center;flex-wrap:wrap">
-              <input type="number" min="0" class="input" style="width:90px" placeholder="الكمية" id="apSupQty_${p.id}">
+              <input type="number" min="0" class="input" style="width:90px" placeholder="الكمية" id="apSupQty_${p.id}" value="${(apQtyDraft[p.id]&&apQtyDraft[p.id].qty)||''}">
               <select class="input" style="width:95px" id="apSupUnit_${p.id}">
-                <option value="carton">كرتون</option>
-                <option value="bundle">ربطة</option>
+                <option value="carton" ${(!apQtyDraft[p.id]||apQtyDraft[p.id].unit==='carton')?'selected':''}>كرتون</option>
+                <option value="bundle" ${(apQtyDraft[p.id]&&apQtyDraft[p.id].unit==='bundle')?'selected':''}>ربطة</option>
+              </select>
+              <select class="input" style="width:95px" id="apSupSize_${p.id}" title="حجم العبوة">
+                <option value="330" ${(!apQtyDraft[p.id]||apQtyDraft[p.id].size==='330')?'selected':''}>330 مل</option>
+                <option value="200" ${(apQtyDraft[p.id]&&apQtyDraft[p.id].size==='200')?'selected':''}>200 مل</option>
               </select>
               <button type="button" class="btn btn-primary btn-sm" data-point-add-qty="${p.id}">+ إضافة كمية</button>
             </div>
@@ -9488,44 +10905,44 @@ function renderActionPoints(){
     }).join('');
   }
   Array.from(wrap.querySelectorAll('[data-point-text]')).forEach(ta=>{
-    ta.addEventListener('change', async ()=>{
+    ta.addEventListener('change', ()=>{
       const p = points.find(x=>x.id===ta.dataset.pointText);
       if(p) p.text = ta.value;
-      await persistSupActionPoints();
+      persistSupActionPoints();
     });
   });
   Array.from(wrap.querySelectorAll('[data-point-remove]')).forEach(b=>{
-    b.addEventListener('click', async ()=>{
+    b.addEventListener('click', ()=>{
       supRecord.actionPoints = points.filter(p=>p.id!==b.dataset.pointRemove);
-      await persistSupActionPoints();
       renderActionPoints();
+      persistSupActionPoints();
     });
   });
   Array.from(wrap.querySelectorAll('[data-photo-name]')).forEach(inp=>{
-    inp.addEventListener('change', async ()=>{
+    inp.addEventListener('change', ()=>{
       const [pid, phid] = inp.dataset.photoName.split(':');
       const p = points.find(x=>x.id===pid);
       const ph = p && p.photos.find(x=>x.id===phid);
       if(ph) ph.name = inp.value;
-      await persistSupActionPoints();
+      persistSupActionPoints();
     });
   });
   Array.from(wrap.querySelectorAll('[data-photo-note]')).forEach(inp=>{
-    inp.addEventListener('change', async ()=>{
+    inp.addEventListener('change', ()=>{
       const [pid, phid] = inp.dataset.photoNote.split(':');
       const p = points.find(x=>x.id===pid);
       const ph = p && p.photos.find(x=>x.id===phid);
       if(ph) ph.note = inp.value;
-      await persistSupActionPoints();
+      persistSupActionPoints();
     });
   });
   Array.from(wrap.querySelectorAll('[data-photo-remove]')).forEach(b=>{
-    b.addEventListener('click', async ()=>{
+    b.addEventListener('click', ()=>{
       const [pid, phid] = b.dataset.photoRemove.split(':');
       const p = points.find(x=>x.id===pid);
       if(p) p.photos = p.photos.filter(x=>x.id!==phid);
-      await persistSupActionPoints();
       renderActionPoints();
+      persistSupActionPoints();
     });
   });
   Array.from(wrap.querySelectorAll('[data-point-photo-input]')).forEach(inp=>{
@@ -9541,45 +10958,52 @@ function renderActionPoints(){
         const timestamp = toEnglishDigits(new Intl.DateTimeFormat('ar-SA-u-nu-latn',{hour:'numeric',minute:'2-digit'}).format(now));
         if(!p.photos) p.photos = [];
         p.photos.push({id:'ph_'+Date.now(), dataUrl:stamped, name:'', note:'', timestamp});
-        await persistSupActionPoints();
         renderActionPoints();
+        persistSupActionPoints();
       }catch(err){ toast('تعذر رفع الصورة','err'); }
     });
   });
   Array.from(wrap.querySelectorAll('[data-point-add-qty]')).forEach(b=>{
-    b.addEventListener('click', async ()=>{
-      const pointId = b.dataset.pointAddQty;
-      const qtyEl = document.getElementById(`apSupQty_${pointId}`);
-      const unitEl = document.getElementById(`apSupUnit_${pointId}`);
+    const pointId = b.dataset.pointAddQty;
+    const qtyEl = document.getElementById(`apSupQty_${pointId}`);
+    const unitEl = document.getElementById(`apSupUnit_${pointId}`);
+    const sizeEl = document.getElementById(`apSupSize_${pointId}`);
+    function saveDraft(){ apQtyDraft[pointId] = {qty: qtyEl.value, unit: unitEl.value, size: sizeEl.value}; }
+    if(qtyEl) qtyEl.addEventListener('input', saveDraft);
+    if(unitEl) unitEl.addEventListener('change', saveDraft);
+    if(sizeEl) sizeEl.addEventListener('change', saveDraft);
+    b.addEventListener('click', ()=>{
       const rawQty = Number(qtyEl.value)||0;
       if(!rawQty){ toast('أدخل الكمية','err'); return; }
       const unit = unitEl ? unitEl.value : 'carton';
+      const bottleSize = sizeEl ? sizeEl.value : '330';
       const qty = unit==='bundle' ? rawQty/bpc : rawQty;
       const p = points.find(x=>x.id===pointId);
       if(!p) return;
       if(!p.withdrawals) p.withdrawals = [];
-      p.withdrawals.push({id:'apw_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), qty, unit, rawQty, time: nowTime12(), by: state.currentUser.name, createdBy: state.currentUser.id});
-      await persistSupActionPoints();
-      toast('تمت إضافة الكمية');
+      p.withdrawals.push({id:'apw_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), qty, unit, rawQty, bottleSize, time: nowTime12(), by: state.currentUser.name, createdBy: state.currentUser.id});
+      delete apQtyDraft[pointId];
       renderActionPoints();
+      toast('تمت إضافة الكمية');
+      persistSupActionPoints();
     });
   });
   Array.from(wrap.querySelectorAll('[data-point-qty-remove]')).forEach(b=>{
-    b.addEventListener('click', async ()=>{
+    b.addEventListener('click', ()=>{
       const [pointId, wid] = b.dataset.pointQtyRemove.split(':');
       const p = points.find(x=>x.id===pointId);
       if(!p || !p.withdrawals) return;
       p.withdrawals = p.withdrawals.filter(w=>w.id!==wid);
-      await persistSupActionPoints();
-      toast('تم الحذف');
       renderActionPoints();
+      toast('تم الحذف');
+      persistSupActionPoints();
     });
   });
   const addBtn = document.getElementById('addActionPointBtn');
-  if(addBtn) addBtn.onclick = async ()=>{
+  if(addBtn) addBtn.onclick = ()=>{
     supRecord.actionPoints.push({id:'point_'+Date.now(), text:'', photos:[]});
-    await persistSupActionPoints();
     renderActionPoints();
+    persistSupActionPoints();
   };
 }
 function actionPointsReadonlyHTML(actionPoints, hidePhotos){
