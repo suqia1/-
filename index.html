@@ -1340,10 +1340,13 @@ async function setupPWA(){
 }
 async function boot(){
   app.innerHTML = `<div class="login-shell"><div class="col" style="align-items:center;gap:10px;color:#8a8377"><div>جارٍ التحميل…</div></div></div>`;
-  await Promise.all([loadUsers(), loadCollaborators(), loadLogo(), loadMosques(), loadSiteName(), loadSiteSubtitle(), loadShowDemoHint(), loadDemoHintText(), loadReportBackgrounds(), loadPdfOrientations(), loadPdfSizing(), loadFormConfigs(), loadSidebarLabels(), loadSidebarOrder(), loadMonthlyOrderLabels(), loadIndicatorLabels(), loadCollabLabels(), loadBgModeLabels(), loadModePillLabels(), loadRoleLabels(), loadReportHeaderConfig(), loadMonthlyColumnLabels(), loadMonthlyTableVisibility(), loadAttendLog(), loadPresenceSettings(), loadPendingCollaborators(), loadGsSidebarOrder(), loadNotifCounters(), loadSupplierOrderLabels(), loadSupplierAccountLabels(), loadWarehouseLabels(), loadDriverLabels()]);
+  // تحميل خفيف وسريع لعناصر شاشة الدخول فقط (الشعار واسم الموقع)، حتى تظهر الشاشة فورًا بدل الانتظار لتحميل كل إعدادات النظام
+  await Promise.all([loadLogo(), loadSiteName(), loadSiteSubtitle()]);
   document.title = state.siteName + ' · نظام إدارة توزيع مياه المساجد';
   setupPWA();
   renderLogin();
+  // باقي إعدادات النظام (غير اللازمة لشاشة الدخول نفسها) تُحمَّل في الخلفية بالتوازي؛ doLogin() ينتظرها قبل عرض لوحة التحكم بعد نجاح الدخول
+  window.__fullBootPromise = Promise.all([loadUsers(), loadCollaborators(), loadMosques(), loadShowDemoHint(), loadDemoHintText(), loadReportBackgrounds(), loadPdfOrientations(), loadPdfSizing(), loadFormConfigs(), loadSidebarLabels(), loadSidebarOrder(), loadMonthlyOrderLabels(), loadIndicatorLabels(), loadCollabLabels(), loadBgModeLabels(), loadModePillLabels(), loadRoleLabels(), loadReportHeaderConfig(), loadMonthlyColumnLabels(), loadMonthlyTableVisibility(), loadAttendLog(), loadPresenceSettings(), loadPendingCollaborators(), loadGsSidebarOrder(), loadNotifCounters(), loadSupplierOrderLabels(), loadSupplierAccountLabels(), loadWarehouseLabels(), loadDriverLabels()]);
   setInterval(async ()=>{
     const t = todayStr();
     if(t !== state.today){
@@ -1356,7 +1359,90 @@ async function boot(){
 }
 
 /* ============ LOGIN ============ */
+function isMobileDevice(){
+  return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+}
+function qlKey(){ return 'skq_quicklogin_device'; }
+function qlSaved(){
+  try{ return JSON.parse(localStorage.getItem(qlKey())); }catch(e){ return null; }
+}
+function qlSaveDevice(data){ try{ localStorage.setItem(qlKey(), JSON.stringify(data)); }catch(e){} }
+function qlClearDevice(){ try{ localStorage.removeItem(qlKey()); }catch(e){} }
+function b64ToBuf(b64){ const bin = atob(b64); const bytes = new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i); return bytes.buffer; }
+function bufToB64(buf){ const bytes = new Uint8Array(buf); let bin=''; bytes.forEach(b=>bin+=String.fromCharCode(b)); return btoa(bin); }
+async function qlAvailable(){
+  if(!isMobileDevice()) return false;
+  if(!window.PublicKeyCredential) return false;
+  try{ return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(); }catch(e){ return false; }
+}
+async function qlRegister(username, password){
+  try{
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    const userId = crypto.getRandomValues(new Uint8Array(16));
+    const cred = await navigator.credentials.create({
+      publicKey: {
+        challenge,
+        rp: { name: state.siteName || 'ضيف المدينة' },
+        user: { id: userId, name: username, displayName: username },
+        pubKeyCredParams: [{type:'public-key', alg:-7}, {type:'public-key', alg:-257}],
+        authenticatorSelection: { authenticatorAttachment:'platform', userVerification:'required' },
+        timeout: 60000,
+      }
+    });
+    if(!cred) return false;
+    qlSaveDevice({ username, password, credentialId: bufToB64(cred.rawId) }); // محفوظة على هذا الجهاز فقط داخل متصفحه، ولا تُرسَل لأي خادم
+    return true;
+  }catch(e){ return false; }
+}
+async function qlAuthenticateAndLogin(){
+  const saved = qlSaved();
+  if(!saved) return;
+  try{
+    const challenge = crypto.getRandomValues(new Uint8Array(32));
+    const assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge,
+        allowCredentials: [{ id: b64ToBuf(saved.credentialId), type:'public-key' }],
+        userVerification: 'required',
+        timeout: 60000,
+      }
+    });
+    if(!assertion) return;
+    // نجاح المصادقة الحيوية على هذا الجهاز — أكمل الدخول تلقائيًا بالبيانات المحفوظة محليًا لهذا الجهاز فقط
+    const userEl = document.getElementById('loginUser'), passEl = document.getElementById('loginPass');
+    if(userEl) userEl.value = saved.username;
+    if(passEl) passEl.value = saved.password;
+    await doLogin();
+  }catch(e){
+    const errEl = document.getElementById('loginError');
+    if(errEl){ errEl.textContent = 'تعذّرت المصادقة الحيوية. جرّب تسجيل الدخول بكلمة المرور.'; errEl.style.display='block'; }
+  }
+}
+function offerQuickLoginSetup(username, password){
+  const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+  const bioName = isIOS ? 'بصمة الوجه' : 'بصمة الإصبع';
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px';
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:14px;padding:22px;max-width:340px;width:100%;text-align:center">
+      <div style="font-size:17px;font-weight:800;margin-bottom:8px">تفعيل الدخول السريع؟</div>
+      <p class="muted small" style="margin-bottom:16px">استخدم ${bioName} لتسجيل الدخول بسرعة في المرات القادمة على هذا الجهاز، بدل كتابة اسم المستخدم وكلمة المرور في كل مرة.</p>
+      <div class="row gap-sm" style="justify-content:center">
+        <button class="btn btn-primary btn-sm" id="qlEnableBtn">تفعيل الآن</button>
+        <button class="btn btn-ghost btn-sm" id="qlSkipBtn">لاحقًا</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  document.getElementById('qlSkipBtn').addEventListener('click', ()=>overlay.remove());
+  document.getElementById('qlEnableBtn').addEventListener('click', async ()=>{
+    const ok = await qlRegister(username, password);
+    overlay.remove();
+    if(ok) toast('تم تفعيل الدخول السريع لهذا الجهاز');
+    else toast('تعذّر تفعيل الدخول السريع','err');
+  });
+}
 function renderLogin(){
+  const saved = qlSaved();
   app.innerHTML = `
   <div class="login-shell">
     <div class="login-card">
@@ -1364,6 +1450,10 @@ function renderLogin(){
       <h1 class="brand-title" style="font-size:26px">${state.siteName}</h1>
       <div class="brand-sub">${state.siteSubtitle}</div>
       <div class="login-error" id="loginError"></div>
+      ${saved ? `
+      <button class="btn btn-primary" style="justify-content:center;margin-bottom:10px;width:100%" id="quickLoginBtn">⚡ الدخول السريع — ${saved.username}</button>
+      <div class="row" style="justify-content:center;margin-bottom:14px"><span class="muted small" style="cursor:pointer;text-decoration:underline" id="quickLoginForget">تسجيل دخول بحساب آخر</span></div>
+      ` : ''}
       <div class="col gap-md">
         <div>
           <label class="label">اسم المستخدم</label>
@@ -1382,6 +1472,10 @@ function renderLogin(){
   document.getElementById('loginBtn').addEventListener('click', doLogin);
   document.getElementById('loginPass').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
   document.getElementById('loginUser').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
+  if(saved){
+    document.getElementById('quickLoginBtn').addEventListener('click', qlAuthenticateAndLogin);
+    document.getElementById('quickLoginForget').addEventListener('click', ()=>{ qlClearDevice(); renderLogin(); });
+  }
 }
 const PDF_LOGO_DATAURL = 'data:image/png;base64,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';
 function logoFallbackSVG(){
@@ -1406,9 +1500,21 @@ async function doLogin(){
   state.currentUser = found;
   state.supDate = state.today;
   await Promise.all([loadCollaborators(), loadLogo(), loadMosques()]);
+  // اعرض عرض تفعيل الدخول السريع مرة واحدة فقط، إن كان الجهاز جوالًا ويدعم البصمة ولم يُفعَّل من قبل على هذا الجهاز
+  if(!qlSaved() && await qlAvailable()){
+    setTimeout(()=>{ offerQuickLoginSetup(found.username, p); }, 600);
+  }
   renderApp();
 }
-function logout(){
+async function logout(){
+  // احفظ أي تعديل لم يُحفظ بعد (خصوصًا الملاحظات) قبل الخروج، حتى لا يضيع بسبب توقيت حدث blur
+  try{
+    if(state.currentUser && state.currentUser.role==='supervisor' && typeof supRecord!=='undefined' && supRecord){
+      const notesEl = document.getElementById('f_notes');
+      if(notesEl && notesEl.value !== supRecord.notes) supRecord.notes = notesEl.value;
+      await persistSupDraft();
+    }
+  }catch(e){ /* لا نمنع الخروج حتى لو تعذّر هذا الحفظ الاحتياطي */ }
   state.currentUser = null;
   if(recorderRefreshInterval){ clearInterval(recorderRefreshInterval); recorderRefreshInterval = null; }
   if(liveSaveInterval){ clearInterval(liveSaveInterval); liveSaveInterval = null; }
@@ -1727,7 +1833,8 @@ async function buildIndicatorDaysData(months, rangeMosques){
       const dateStr = monthDateStr(yyyymm, d);
       const values = {}, values330 = {}, values200 = {};
       rangeMosques.forEach(mm=>{
-        const rec = data[mm.id] ? data[mm.id][dateStr] : null;
+        const rawRec = data[mm.id] ? data[mm.id][dateStr] : null;
+        const rec = (rawRec && rawRec.gsApproved) ? rawRec : null; // تجاهل أي يوم لم يُعتمد تقريره بعد — لا يظهر في المؤشر كأنه بيانات فعلية
         values[mm.id] = totalDistributedFromRecord(rec);
         values330[mm.id] = cartonsForRecordBySize(rec, '330');
         values200[mm.id] = cartonsForRecordBySize(rec, '200');
@@ -2085,7 +2192,8 @@ async function computeIndicatorMonthStats(mosqueId, yyyymm){
   for(let d=1; d<=total_days; d++){
     const dateStr = monthDateStr(yyyymm, d);
     if(hidden[dateStr]) continue; // محسوبة مسبقًا ضمن الأرشيف عند حذفها من "اليومي" — لا تُحسب مرتين
-    const rec = data[mosqueId] ? data[mosqueId][dateStr] : null;
+    const rawRec = data[mosqueId] ? data[mosqueId][dateStr] : null;
+    const rec = (rawRec && rawRec.gsApproved) ? rawRec : null; // تجاهل أي يوم لم يُعتمد تقريره بعد
     const val = totalDistributedFromRecord(rec);
     const v330 = cartonsForRecordBySize(rec,'330'), v200 = cartonsForRecordBySize(rec,'200');
     total += val;
@@ -2109,7 +2217,8 @@ async function computeIndicatorQuarterStats(mosqueId, qkey){
     for(let d=1; d<=total_days; d++){
       const dateStr = monthDateStr(yyyymm, d);
       if(hidden[dateStr]) continue;
-      const rec = data[mosqueId] ? data[mosqueId][dateStr] : null;
+      const rawRec = data[mosqueId] ? data[mosqueId][dateStr] : null;
+      const rec = (rawRec && rawRec.gsApproved) ? rawRec : null; // تجاهل أي يوم لم يُعتمد تقريره بعد
       const val = totalDistributedFromRecord(rec);
       const v330 = cartonsForRecordBySize(rec,'330'), v200 = cartonsForRecordBySize(rec,'200');
       total += val;
@@ -4146,7 +4255,7 @@ async function loadAndRenderReport(approvalMode){
         <div data-pdf-strip-block="statement">
         <label class="label" style="margin-top:14px">${fr.statementTitle}</label>
         <table class="kv-table">
-          ${(rec.withdrawals||[]).length ? `<tr><td><strong>الكمية</strong></td><td><strong>${fr.statementColLabel}</strong></td><td><strong>سجّلها</strong></td></tr>` + rec.withdrawals.map(w=>`<tr><td>${w.qty||0}</td><td>${w.note||'<span class="muted">—</span>'}</td><td>${w.createdByName?`${w.createdByName} — ${w.time||''}`:'<span class="muted">—</span>'}</td></tr>`).join('') : `<tr><td class="muted small">لا توجد سحوبات مسجّلة.</td></tr>`}
+          ${(rec.withdrawals||[]).length ? `<tr><td><strong>الكمية</strong></td><td><strong>${fr.statementColLabel}</strong></td><td><strong>سجّلها</strong></td></tr>` + rec.withdrawals.map(w=>`<tr><td>${withdrawalQtyLabel(w)}</td><td>${w.note||'<span class="muted">—</span>'}</td><td>${w.createdByName?`${w.createdByName} — ${w.time||''}`:'<span class="muted">—</span>'}</td></tr>`).join('') : `<tr><td class="muted small">لا توجد سحوبات مسجّلة.</td></tr>`}
           <p class="muted small" style="margin-top:6px">صور السحوبات تظهر فقط في التقارير المباشرة، وتزول عند بداية يوم جديد.</p>
         </table>
         </div>
@@ -4160,7 +4269,7 @@ async function loadAndRenderReport(approvalMode){
         <div data-pdf-strip-block="statement">
         <label class="label" style="margin-top:14px">${tk.statementTitle}</label>
         <table class="kv-table">
-          ${(rec.tankerWithdrawals||[]).length ? `<tr><td><strong>الكمية</strong></td><td><strong>${tk.statementColLabel}</strong></td><td><strong>سجّلها</strong></td></tr>` + rec.tankerWithdrawals.map(w=>`<tr><td>${w.qty||0}</td><td>${w.note||'<span class="muted">—</span>'}</td><td>${w.createdByName?`${w.createdByName} — ${w.time||''}`:'<span class="muted">—</span>'}</td></tr>`).join('') : `<tr><td class="muted small">لا توجد سحوبات مسجّلة.</td></tr>`}
+          ${(rec.tankerWithdrawals||[]).length ? `<tr><td><strong>الكمية</strong></td><td><strong>${tk.statementColLabel}</strong></td><td><strong>سجّلها</strong></td></tr>` + rec.tankerWithdrawals.map(w=>`<tr><td>${withdrawalQtyLabel(w)}</td><td>${w.note||'<span class="muted">—</span>'}</td><td>${w.createdByName?`${w.createdByName} — ${w.time||''}`:'<span class="muted">—</span>'}</td></tr>`).join('') : `<tr><td class="muted small">لا توجد سحوبات مسجّلة.</td></tr>`}
           <p class="muted small" style="margin-top:6px">صور السحوبات تظهر فقط في التقارير المباشرة، وتزول عند بداية يوم جديد.</p>
         </table>
         </div>
@@ -4340,9 +4449,18 @@ function bottlesForRecordBySize(rec, size){
   const tanker = (rec.tankerWithdrawals||[]).filter(w=>(w.bottleSize||'330')===size).reduce((s,w)=>s+bottlesForEntry(w),0);
   return fridge + tanker;
 }
+function withdrawalQtyLabel(w){
+  const size = w.bottleSize || '330';
+  const qty = w.qty||0;
+  if(w.unit==='bundle'){
+    const rawQty = w.rawQty!==undefined ? w.rawQty : qty;
+    return `${qty} كرتون (${rawQty} ربطة) — ${size} مل`;
+  }
+  return `${qty} كرتون — ${size} مل`;
+}
 function totalDistributedFromRecord(rec){
   if(!rec) return 0;
-  const tanker = Number(rec.qtyDistributed)||0;
+  const tanker = (rec.tankerWithdrawals||[]).reduce((s,w)=>s+(Number(w.qty)||0),0); // يُحسب من نفس مصفوفة السحوبات مباشرة بدل حقل rec.qtyDistributed المخزَّن، حتى يطابق دائمًا مجموع 330+200
   const fridge = (rec.withdrawals||[]).reduce((s,w)=>s+(Number(w.qty)||0),0);
   return tanker + fridge;
 }
@@ -5426,7 +5544,8 @@ async function loadAndRenderIndicator(mosqueId){
       const dateStr = monthDateStr(yyyymm, d);
       const values = {}, values330 = {}, values200 = {};
       rangeMosques.forEach(mm=>{
-        const rec = data[mm.id] ? data[mm.id][dateStr] : null;
+        const rawRec = data[mm.id] ? data[mm.id][dateStr] : null;
+        const rec = (rawRec && rawRec.gsApproved) ? rawRec : null; // تجاهل أي يوم لم يُعتمد تقريره بعد — لا يظهر في المؤشر كأنه بيانات فعلية
         values[mm.id] = totalDistributedFromRecord(rec);
         values330[mm.id] = cartonsForRecordBySize(rec, '330');
         values200[mm.id] = cartonsForRecordBySize(rec, '200');
@@ -5490,9 +5609,10 @@ async function loadAndRenderIndicatorAll(){
       const values = {}, values330 = {}, values200 = {};
       rangeMosques.forEach(mm=>{
         const rec = data[mm.id] ? data[mm.id][dateStr] : null;
-        values[mm.id] = totalDistributedFromRecord(rec);
-        values330[mm.id] = cartonsForRecordBySize(rec, '330');
-        values200[mm.id] = cartonsForRecordBySize(rec, '200');
+        const approvedRec = (rec && rec.gsApproved) ? rec : null; // تجاهل أي يوم لم يُعتمد تقريره بعد — لا يظهر في المؤشر كأنه بيانات فعلية
+        values[mm.id] = totalDistributedFromRecord(approvedRec);
+        values330[mm.id] = cartonsForRecordBySize(approvedRec, '330');
+        values200[mm.id] = cartonsForRecordBySize(approvedRec, '200');
         if(rec && rec.savedAt){
           presentSum[mm.id] += Object.values(rec.attendance||{}).filter(v=>v==='present').length;
           presentCount[mm.id] += 1;
@@ -7642,6 +7762,19 @@ let withdrawSyncInterval = null;
 
 let recorderRecord = null;
 let apQtyDraft = {}; // يحفظ ما كُتب في حقول "إضافة كمية" لكل نقطة فعالة مؤقتًا، حتى لا يختفي الرقم عند تغيير المقاس/النوع أو أي إعادة رسم للقائمة قبل الضغط على "إضافة"
+let pendingSyncCount = 0; // عدد عمليات الحفظ الجارية في الخلفية حاليًا — طالما هو أكبر من صفر، تتجنب دورات التحديث الدوري إعادة الجلب والكتابة فوق التعديل المحلي الذي لم يصل للخادم بعد (وهو سبب اختفاء رقم مضاف حديثًا ثم عودته لاحقًا)
+async function withPendingSync(fn){
+  pendingSyncCount++;
+  try{ await fn(); } finally { pendingSyncCount--; }
+}
+let recordSaveQueues = {}; // key: `${mosqueId}__${date}` -> سلسلة Promise تضمن أن كل عملية "اقرأ الأحدث ثم عدّل ثم احفظ" لنفس السجل تُنفَّذ بالتتابع، لا بالتوازي — بدون هذا، إضافتان سريعتان متتاليتان (سواء من نفس المستخدم أو مستخدمين مختلفين) قد تقرآن نفس النسخة القديمة وتكتب كل واحدة فوق الأخرى، فتضيع إحدى الإضافتين نهائيًا
+function queueRecordSave(mosqueId, date, fn){
+  const key = `${mosqueId}__${date}`;
+  const prev = recordSaveQueues[key] || Promise.resolve();
+  const next = prev.then(fn, fn); // نكمل حتى لو فشلت العملية السابقة، حتى لا تتوقف كل العمليات التالية
+  recordSaveQueues[key] = next;
+  return next;
+}
 let recorderRefreshInterval = null;
 function gsSideLabel(key){
   if(key==='recorderusers') return 'مستخدمين ' + state.roleLabels.recorder;
@@ -9419,14 +9552,17 @@ async function renderRecorderMain(){
   function sectionShellHTML(title, key){
     return `
     <div class="card" style="margin-bottom:18px">
-      <h3 style="margin-top:0">${title}</h3>
-      <div class="col gap-sm" style="margin-bottom:12px" id="recList_${key}"></div>
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <h3 style="margin:0">${title}</h3>
+        <span class="muted small" id="recTotal_${key}" style="font-weight:700"></span>
+      </div>
+      <div class="col gap-sm" style="margin:12px 0" id="recList_${key}"></div>
       <div class="row gap-sm wrap" style="align-items:center">
         <input class="input" style="flex:1;min-width:140px" placeholder="البيان" id="new_${key}_note">
         <input type="number" min="0" class="input" style="width:100px" placeholder="الكمية" id="new_${key}_qty">
         <select class="input" style="width:100px" id="new_${key}_unit">
+          <option value="bundle" selected>ربطة</option>
           <option value="carton">كرتون</option>
-          <option value="bundle">ربطة</option>
         </select>
         <select class="input" style="width:100px" id="new_${key}_size" title="حجم العبوة">
           <option value="330">330 مل</option>
@@ -9476,7 +9612,7 @@ async function renderRecorderMain(){
       const rawQty = Number(document.getElementById(`new_${key}_qty`).value)||0;
       if(!rawQty){ toast('أدخل الكمية','err'); return; }
       const unitEl = document.getElementById(`new_${key}_unit`);
-      const unit = unitEl ? unitEl.value : 'carton';
+      const unit = unitEl ? unitEl.value : 'bundle';
       const sizeEl = document.getElementById(`new_${key}_size`);
       const bottleSize = sizeEl ? sizeEl.value : '330';
       const bpc = (key==='withdrawals' ? cfg.fridge.bundlesPerCarton : cfg.tankers.bundlesPerCarton) || 2;
@@ -9498,22 +9634,26 @@ async function renderRecorderMain(){
       document.getElementById(`new_${key}_qty`).value = '';
       document.getElementById(`new_${key}_photo_status`).textContent = '';
       pendingPhoto = null;
-      // احفظ في الخلفية مع إعادة الجلب أولًا حتى لا تُفقد إضافات متزامنة من مسجّلين آخرين
-      (async ()=>{
-        const latest = await loadRecord(mosqueId, state.today);
-        if(!latest.withdrawals) latest.withdrawals = [];
-        if(!latest.tankerWithdrawals) latest.tankerWithdrawals = [];
-        latest[key].push(entry);
-        const ok = await storageSet(recKey(mosqueId, state.today), JSON.stringify(latest));
-        if(ok) await bumpNotifSite(key==='tankerWithdrawals' ? ['livereports'] : ['livereports','indicator'], mosqueId);
-        else toast('تعذر الحفظ، حاول مرة أخرى','err');
-      })();
+      // احفظ في الخلفية مع إعادة الجلب أولًا حتى لا تُفقد إضافات متزامنة من مسجّلين آخرين — والحفظات تُنفَّذ بالتتابع (لا بالتوازي) حتى لا تكتب إضافة فوق أخرى
+      pendingSyncCount++;
+      queueRecordSave(mosqueId, state.today, async ()=>{
+        try{
+          const latest = await loadRecord(mosqueId, state.today);
+          if(!latest.withdrawals) latest.withdrawals = [];
+          if(!latest.tankerWithdrawals) latest.tankerWithdrawals = [];
+          latest[key].push(entry);
+          const ok = await storageSet(recKey(mosqueId, state.today), JSON.stringify(latest));
+          if(ok) await bumpNotifSite(key==='tankerWithdrawals' ? ['livereports'] : ['livereports','indicator'], mosqueId);
+          else toast('تعذر الحفظ، حاول مرة أخرى','err');
+        } finally { pendingSyncCount--; }
+      });
     });
   });
 
   if(recorderRefreshInterval) clearInterval(recorderRefreshInterval);
   recorderRefreshInterval = setInterval(async ()=>{
     if(!document.getElementById('recMain')) return;
+    if(pendingSyncCount>0) return; // حفظ محلي لم يصل للخادم بعد — لا تُعِد الجلب الآن حتى لا يختفي مؤقتًا
     const active = document.activeElement;
     const isTyping = active && (active.tagName==='INPUT' || active.tagName==='SELECT' || active.tagName==='TEXTAREA');
     const latest = await loadRecord(mosqueId, state.today);
@@ -9581,8 +9721,8 @@ function renderRecorderActionPoints(cfg, rec){
             <div class="row gap-sm" style="margin-top:8px;align-items:center;flex-wrap:wrap">
               <input type="number" min="0" class="input" style="width:90px" placeholder="الكمية" id="apQty_${p.id}" value="${(apQtyDraft[p.id]&&apQtyDraft[p.id].qty)||''}">
               <select class="input" style="width:95px" id="apUnit_${p.id}">
-                <option value="carton" ${(!apQtyDraft[p.id]||apQtyDraft[p.id].unit==='carton')?'selected':''}>كرتون</option>
-                <option value="bundle" ${(apQtyDraft[p.id]&&apQtyDraft[p.id].unit==='bundle')?'selected':''}>ربطة</option>
+                <option value="bundle" ${(!apQtyDraft[p.id]||apQtyDraft[p.id].unit==='bundle')?'selected':''}>ربطة</option>
+                <option value="carton" ${(apQtyDraft[p.id]&&apQtyDraft[p.id].unit==='carton')?'selected':''}>كرتون</option>
               </select>
               <select class="input" style="width:95px" id="apSize_${p.id}" title="حجم العبوة">
                 <option value="330" ${(!apQtyDraft[p.id]||apQtyDraft[p.id].size==='330')?'selected':''}>330 مل</option>
@@ -9608,7 +9748,7 @@ function renderRecorderActionPoints(cfg, rec){
     b.addEventListener('click', ()=>{
       const rawQty = Number(qtyEl.value)||0;
       if(!rawQty){ toast('أدخل الكمية','err'); return; }
-      const unit = unitEl ? unitEl.value : 'carton';
+      const unit = unitEl ? unitEl.value : 'bundle';
       const bottleSize = sizeEl ? sizeEl.value : '330';
       const qty = unit==='bundle' ? rawQty/bpc : rawQty;
       const mosqueId = state.currentUser.mosqueId;
@@ -9621,18 +9761,21 @@ function renderRecorderActionPoints(cfg, rec){
       delete apQtyDraft[pointId];
       renderRecorderActionPoints(cfg, recorderRecord);
       toast('تمت إضافة الكمية');
-      (async ()=>{
-        const latest = await loadRecord(mosqueId, state.today);
-        if(!latest.actionPoints) latest.actionPoints = [];
-        const latestPoint = latest.actionPoints.find(p=>p.id===pointId);
-        if(latestPoint){
-          if(!latestPoint.withdrawals) latestPoint.withdrawals = [];
-          latestPoint.withdrawals.push(entry);
-          const ok = await storageSet(recKey(mosqueId, state.today), JSON.stringify(latest));
-          if(ok) await bumpNotifSite(['livereports','indicator'], mosqueId);
-          else toast('تعذر الحفظ، حاول مرة أخرى','err');
-        }
-      })();
+      pendingSyncCount++;
+      queueRecordSave(mosqueId, state.today, async ()=>{
+        try{
+          const latest = await loadRecord(mosqueId, state.today);
+          if(!latest.actionPoints) latest.actionPoints = [];
+          const latestPoint = latest.actionPoints.find(p=>p.id===pointId);
+          if(latestPoint){
+            if(!latestPoint.withdrawals) latestPoint.withdrawals = [];
+            latestPoint.withdrawals.push(entry);
+            const ok = await storageSet(recKey(mosqueId, state.today), JSON.stringify(latest));
+            if(ok) await bumpNotifSite(['livereports','indicator'], mosqueId);
+            else toast('تعذر الحفظ، حاول مرة أخرى','err');
+          }
+        } finally { pendingSyncCount--; }
+      });
     });
   });
   Array.from(wrap.querySelectorAll('[data-ap-qty-remove]')).forEach(b=>{
@@ -9646,20 +9789,32 @@ function renderRecorderActionPoints(cfg, rec){
       point.withdrawals = point.withdrawals.filter(w=>w.id!==wid);
       renderRecorderActionPoints(cfg, recorderRecord);
       toast('تم الحذف');
-      (async ()=>{
-        const latest = await loadRecord(mosqueId, state.today);
-        const latestPoint = (latest.actionPoints||[]).find(p=>p.id===pointId);
-        if(latestPoint && latestPoint.withdrawals){
-          latestPoint.withdrawals = latestPoint.withdrawals.filter(w=>w.id!==wid);
-          const ok = await storageSet(recKey(mosqueId, state.today), JSON.stringify(latest));
-          if(ok) await bumpNotifSite(['livereports','indicator'], mosqueId);
-          else toast('تعذر الحفظ، حاول مرة أخرى','err');
-        }
-      })();
+      pendingSyncCount++;
+      queueRecordSave(mosqueId, state.today, async ()=>{
+        try{
+          const latest = await loadRecord(mosqueId, state.today);
+          const latestPoint = (latest.actionPoints||[]).find(p=>p.id===pointId);
+          if(latestPoint && latestPoint.withdrawals){
+            latestPoint.withdrawals = latestPoint.withdrawals.filter(w=>w.id!==wid);
+            const ok = await storageSet(recKey(mosqueId, state.today), JSON.stringify(latest));
+            if(ok) await bumpNotifSite(['livereports','indicator'], mosqueId);
+            else toast('تعذر الحفظ، حاول مرة أخرى','err');
+          }
+        } finally { pendingSyncCount--; }
+      });
     });
   });
 }
+function updateRecorderTotals(rec){
+  const fridgeTotal = (rec.withdrawals||[]).reduce((s,w)=>s+(Number(w.qty)||0),0);
+  const tankerTotal = (rec.tankerWithdrawals||[]).reduce((s,w)=>s+(Number(w.qty)||0),0);
+  const fridgeEl = document.getElementById('recTotal_withdrawals');
+  const tankerEl = document.getElementById('recTotal_tankerWithdrawals');
+  if(fridgeEl) fridgeEl.textContent = `إجمالي الكمية المسحوبة: ${fridgeTotal} كرتون`;
+  if(tankerEl) tankerEl.textContent = `إجمالي الكمية المسحوبة: ${tankerTotal} كرتون`;
+}
 function renderRecorderLists(rec){
+  updateRecorderTotals(rec);
   function canEdit(entry){ return entry.createdBy === state.currentUser.id; }
   ['withdrawals','tankerWithdrawals'].forEach(key=>{
     const wrap = document.getElementById(`recList_${key}`);
@@ -9669,7 +9824,7 @@ function renderRecorderLists(rec){
       <div class="row gap-sm" style="align-items:center;border-bottom:1px solid #F1ECE0;padding:8px 2px;flex-wrap:wrap">
         <input class="input" style="flex:1;min-width:140px" placeholder="البيان" value="${w.note||''}" ${canEdit(w)?`data-rec-note="${key}:${i}"`:'disabled'}>
         <input type="number" min="0" class="input" style="width:100px" value="${w.qty||0}" ${canEdit(w)?`data-rec-qty="${key}:${i}"`:'disabled'}>
-        ${w.unit==='bundle' ? `<span class="muted small">كرتون ${w.qty||0} / الربطات ${w.rawQty||0}</span>` : ''}
+        <span class="muted small">${withdrawalQtyLabel(w)}</span>
         ${w.photo?`<img src="${w.photo}" style="width:32px;height:32px;object-fit:cover;border-radius:6px">`:''}
         <span class="muted small">${w.createdByName||'—'} — ${w.time||''}</span>
         ${canEdit(w)?`<button class="icon-btn" data-rec-del="${key}:${i}">✕</button>`:''}
@@ -9909,6 +10064,7 @@ async function renderSupervisorMain(){
   if(state.supDate === state.today){
     withdrawSyncInterval = setInterval(async ()=>{
       if(!document.getElementById('supMain')) return;
+      if(pendingSyncCount>0) return; // حفظ محلي لم يصل للخادم بعد — لا تستبدل القوائم الآن حتى لا تختفي إضافة حديثة مؤقتًا
       const active = document.activeElement;
       const isTyping = active && (active.tagName==='INPUT' || active.tagName==='SELECT' || active.tagName==='TEXTAREA');
       if(isTyping) return; // never overwrite the list while the supervisor is actively editing a field, even a qty/note keystroke
@@ -10155,8 +10311,8 @@ async function renderSupervisorMain(){
   on('f_distEnd','change', ()=>{ supRecord.distributionEnd = document.getElementById('f_distEnd').value||''; persistSupDraft(); });
   on('f_distStartReset','click', ()=>{ const el=document.getElementById('f_distStart'); if(el) el.value=''; supRecord.distributionStart=''; persistSupDraft(); });
   on('f_distEndReset','click', ()=>{ const el=document.getElementById('f_distEnd'); if(el) el.value=''; supRecord.distributionEnd=''; persistSupDraft(); });
-  on('addWithdrawBtn','click', async ()=>{ supRecord.withdrawals.push({id:'w_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), note:'', qty:0, unit:'carton', rawQty:0, createdBy:state.currentUser.id, createdByName:state.currentUser.name, time:nowTime12()}); renderWithdrawList(); updateStats(); await persistSupWithdrawals(); });
-  on('addTankerWithdrawBtn','click', async ()=>{ if(!supRecord.tankerWithdrawals) supRecord.tankerWithdrawals=[]; supRecord.tankerWithdrawals.push({id:'w_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), note:'', qty:0, unit:'carton', rawQty:0, createdBy:state.currentUser.id, createdByName:state.currentUser.name, time:nowTime12()}); renderTankerWithdrawList(); updateStats(); await persistSupWithdrawals(true); });
+  on('addWithdrawBtn','click', async ()=>{ supRecord.withdrawals.push({id:'w_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), note:'', qty:0, unit:'bundle', rawQty:0, createdBy:state.currentUser.id, createdByName:state.currentUser.name, time:nowTime12()}); renderWithdrawList(); updateStats(); await persistSupWithdrawals(); });
+  on('addTankerWithdrawBtn','click', async ()=>{ if(!supRecord.tankerWithdrawals) supRecord.tankerWithdrawals=[]; supRecord.tankerWithdrawals.push({id:'w_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), note:'', qty:0, unit:'bundle', rawQty:0, createdBy:state.currentUser.id, createdByName:state.currentUser.name, time:nowTime12()}); renderTankerWithdrawList(); updateStats(); await persistSupWithdrawals(true); });
 
   renderWithdrawList();
   renderTankerWithdrawList();
@@ -10210,14 +10366,14 @@ function renderWithdrawList(){
       <input class="input" placeholder="بيان السحبة (مثال: الفترة المسائية)" value="${w.note||''}" data-w-note="${i}">
       <input class="input" style="max-width:100px" type="number" min="0" placeholder="الكمية" value="${rawQty}" data-w-qty="${i}">
       <select class="input" style="max-width:100px" data-w-unit="${i}">
-        <option value="carton" ${unit==='carton'?'selected':''}>كرتون</option>
         <option value="bundle" ${unit==='bundle'?'selected':''}>ربطة</option>
+        <option value="carton" ${unit==='carton'?'selected':''}>كرتون</option>
       </select>
       <select class="input" style="max-width:100px" data-w-size="${i}" title="حجم العبوة">
         <option value="330" ${size==='330'?'selected':''}>330 مل</option>
         <option value="200" ${size==='200'?'selected':''}>200 مل</option>
       </select>
-      ${unit==='bundle' ? `<span class="muted small">كرتون ${w.qty||0} / الربطات ${rawQty}</span>` : ''}
+      <span class="muted small">${withdrawalQtyLabel(w)}</span>
       ${showPhoto ? `
       <label class="icon-btn" style="cursor:pointer" title="تصوير">📷
         <input type="file" accept="image/*" capture="environment" style="display:none" data-w-photo="${i}">
@@ -10306,14 +10462,14 @@ function renderTankerWithdrawList(){
         <input class="input" placeholder="بيان السحبة (مثال: الفترة المسائية)" value="${w.note||''}" data-tw-note="${i}">
         <input class="input" style="max-width:100px" type="number" min="0" placeholder="الكمية" value="${rawQty}" data-tw-qty="${i}">
         <select class="input" style="max-width:100px" data-tw-unit="${i}">
-          <option value="carton" ${unit==='carton'?'selected':''}>كرتون</option>
           <option value="bundle" ${unit==='bundle'?'selected':''}>ربطة</option>
+          <option value="carton" ${unit==='carton'?'selected':''}>كرتون</option>
         </select>
         <select class="input" style="max-width:100px" data-tw-size="${i}" title="حجم العبوة">
           <option value="330" ${size==='330'?'selected':''}>330 مل</option>
           <option value="200" ${size==='200'?'selected':''}>200 مل</option>
         </select>
-        ${unit==='bundle' ? `<span class="muted small">كرتون ${w.qty||0} / الربطات ${rawQty}</span>` : ''}
+        <span class="muted small">${withdrawalQtyLabel(w)}</span>
         ${showPhoto ? `
         <label class="icon-btn" style="cursor:pointer" title="تصوير">📷
           <input type="file" accept="image/*" capture="environment" style="display:none" data-tw-photo="${i}">
@@ -10608,18 +10764,22 @@ function nowDateTime12(){
 }
 async function persistSupWithdrawals(skipIndicator){
   const mosqueId = state.currentUser.mosqueId;
-  const latest = await loadRecord(mosqueId, state.supDate);
-  latest.withdrawals = supRecord.withdrawals;
-  latest.tankerWithdrawals = supRecord.tankerWithdrawals;
-  await storageSet(recKey(mosqueId, state.supDate), JSON.stringify(latest));
-  await bumpNotifSite(skipIndicator ? ['livereports'] : ['livereports','indicator'], mosqueId); // notifies immediately on any addition, unlike المتابعة والتقارير which only notifies after the final daily save — tanker-table changes deliberately skip المؤشر per request
+  await withPendingSync(()=> queueRecordSave(mosqueId, state.supDate, async ()=>{
+    const latest = await loadRecord(mosqueId, state.supDate);
+    latest.withdrawals = supRecord.withdrawals;
+    latest.tankerWithdrawals = supRecord.tankerWithdrawals;
+    await storageSet(recKey(mosqueId, state.supDate), JSON.stringify(latest));
+    await bumpNotifSite(skipIndicator ? ['livereports'] : ['livereports','indicator'], mosqueId); // notifies immediately on any addition, unlike المتابعة والتقارير which only notifies after the final daily save — tanker-table changes deliberately skip المؤشر per request
+  }));
 }
 async function persistSupActionPoints(){
   const mosqueId = state.currentUser.mosqueId;
-  const latest = await loadRecord(mosqueId, state.supDate);
-  latest.actionPoints = supRecord.actionPoints;
-  await storageSet(recKey(mosqueId, state.supDate), JSON.stringify(latest));
-  await bumpNotifSite(['livereports','indicator'], mosqueId);
+  await withPendingSync(()=> queueRecordSave(mosqueId, state.supDate, async ()=>{
+    const latest = await loadRecord(mosqueId, state.supDate);
+    latest.actionPoints = supRecord.actionPoints;
+    await storageSet(recKey(mosqueId, state.supDate), JSON.stringify(latest));
+    await bumpNotifSite(['livereports','indicator'], mosqueId);
+  }));
 }
 // يحفظ فورًا كل ما تم إدخاله (صور الدخول/الخروج/الثلاجة/السند، والتحضير) فور تغييره،
 // حتى لا تُفقد البيانات إذا خرج المشرف قبل الضغط على "حفظ بيانات اليوم".
@@ -10627,34 +10787,36 @@ async function persistSupActionPoints(){
 async function persistSupDraft(){
   if(!state.currentUser || !state.currentUser.mosqueId) return;
   const mosqueId = state.currentUser.mosqueId;
-  const latest = await loadRecord(mosqueId, state.supDate);
-  latest.entryPhoto = supRecord.entryPhoto;
-  latest.exitPhoto = supRecord.exitPhoto;
-  latest.fridgePhoto = supRecord.fridgePhoto;
-  latest.receipt = supRecord.receipt;
-  latest.notesPhoto = supRecord.notesPhoto;
-  latest.customPhotos = supRecord.customPhotos;
-  latest.attendance = supRecord.attendance;
-  latest.attendanceNotes = supRecord.attendanceNotes;
-  latest.attendanceTimestamps = supRecord.attendanceTimestamps;
-  latest.workTimes = supRecord.workTimes;
-  latest.customAttendanceStats = supRecord.customAttendanceStats;
-  latest.waterColdness = supRecord.waterColdness;
-  latest.notes = supRecord.notes;
-  latest.openingStock330 = supRecord.openingStock330;
-  latest.openingStock200 = supRecord.openingStock200;
-  latest.openingStock = supRecord.openingStock;
-  latest.newCartons330 = supRecord.newCartons330;
-  latest.newCartons200 = supRecord.newCartons200;
-  latest.newCartons = supRecord.newCartons;
-  latest.qtyReceived330 = supRecord.qtyReceived330;
-  latest.qtyReceived200 = supRecord.qtyReceived200;
-  latest.qtyReceived = supRecord.qtyReceived;
-  latest.tankerArrival = supRecord.tankerArrival;
-  latest.tankerCount = supRecord.tankerCount;
-  latest.distributionStart = supRecord.distributionStart;
-  latest.distributionEnd = supRecord.distributionEnd;
-  await storageSet(recKey(mosqueId, state.supDate), JSON.stringify(latest));
+  await withPendingSync(()=> queueRecordSave(mosqueId, state.supDate, async ()=>{
+    const latest = await loadRecord(mosqueId, state.supDate);
+    latest.entryPhoto = supRecord.entryPhoto;
+    latest.exitPhoto = supRecord.exitPhoto;
+    latest.fridgePhoto = supRecord.fridgePhoto;
+    latest.receipt = supRecord.receipt;
+    latest.notesPhoto = supRecord.notesPhoto;
+    latest.customPhotos = supRecord.customPhotos;
+    latest.attendance = supRecord.attendance;
+    latest.attendanceNotes = supRecord.attendanceNotes;
+    latest.attendanceTimestamps = supRecord.attendanceTimestamps;
+    latest.workTimes = supRecord.workTimes;
+    latest.customAttendanceStats = supRecord.customAttendanceStats;
+    latest.waterColdness = supRecord.waterColdness;
+    latest.notes = supRecord.notes;
+    latest.openingStock330 = supRecord.openingStock330;
+    latest.openingStock200 = supRecord.openingStock200;
+    latest.openingStock = supRecord.openingStock;
+    latest.newCartons330 = supRecord.newCartons330;
+    latest.newCartons200 = supRecord.newCartons200;
+    latest.newCartons = supRecord.newCartons;
+    latest.qtyReceived330 = supRecord.qtyReceived330;
+    latest.qtyReceived200 = supRecord.qtyReceived200;
+    latest.qtyReceived = supRecord.qtyReceived;
+    latest.tankerArrival = supRecord.tankerArrival;
+    latest.tankerCount = supRecord.tankerCount;
+    latest.distributionStart = supRecord.distributionStart;
+    latest.distributionEnd = supRecord.distributionEnd;
+    await storageSet(recKey(mosqueId, state.supDate), JSON.stringify(latest));
+  }));
 }
 function nowTime12raw(){
   const d = new Date();
@@ -10975,7 +11137,7 @@ function renderActionPoints(){
     b.addEventListener('click', ()=>{
       const rawQty = Number(qtyEl.value)||0;
       if(!rawQty){ toast('أدخل الكمية','err'); return; }
-      const unit = unitEl ? unitEl.value : 'carton';
+      const unit = unitEl ? unitEl.value : 'bundle';
       const bottleSize = sizeEl ? sizeEl.value : '330';
       const qty = unit==='bundle' ? rawQty/bpc : rawQty;
       const p = points.find(x=>x.id===pointId);
