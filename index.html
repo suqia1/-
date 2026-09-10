@@ -1340,13 +1340,13 @@ async function setupPWA(){
 }
 async function boot(){
   app.innerHTML = `<div class="login-shell"><div class="col" style="align-items:center;gap:10px;color:#8a8377"><div>جارٍ التحميل…</div></div></div>`;
-  // تحميل خفيف وسريع لعناصر شاشة الدخول فقط (الشعار واسم الموقع)، حتى تظهر الشاشة فورًا بدل الانتظار لتحميل كل إعدادات النظام
-  await Promise.all([loadLogo(), loadSiteName(), loadSiteSubtitle()]);
+  // تحميل خفيف وسريع لعناصر شاشة الدخول فقط (الشعار، اسم الموقع، ونص التلميح أسفل الشاشة)، حتى تظهر الشاشة فورًا بدل الانتظار لتحميل كل إعدادات النظام
+  await Promise.all([loadLogo(), loadSiteName(), loadSiteSubtitle(), loadShowDemoHint(), loadDemoHintText()]);
   document.title = state.siteName + ' · نظام إدارة توزيع مياه المساجد';
   setupPWA();
   renderLogin();
   // باقي إعدادات النظام (غير اللازمة لشاشة الدخول نفسها) تُحمَّل في الخلفية بالتوازي؛ doLogin() ينتظرها قبل عرض لوحة التحكم بعد نجاح الدخول
-  window.__fullBootPromise = Promise.all([loadUsers(), loadCollaborators(), loadMosques(), loadShowDemoHint(), loadDemoHintText(), loadReportBackgrounds(), loadPdfOrientations(), loadPdfSizing(), loadFormConfigs(), loadSidebarLabels(), loadSidebarOrder(), loadMonthlyOrderLabels(), loadIndicatorLabels(), loadCollabLabels(), loadBgModeLabels(), loadModePillLabels(), loadRoleLabels(), loadReportHeaderConfig(), loadMonthlyColumnLabels(), loadMonthlyTableVisibility(), loadAttendLog(), loadPresenceSettings(), loadPendingCollaborators(), loadGsSidebarOrder(), loadNotifCounters(), loadSupplierOrderLabels(), loadSupplierAccountLabels(), loadWarehouseLabels(), loadDriverLabels()]);
+  window.__fullBootPromise = Promise.all([loadUsers(), loadCollaborators(), loadMosques(), loadReportBackgrounds(), loadPdfOrientations(), loadPdfSizing(), loadFormConfigs(), loadSidebarLabels(), loadSidebarOrder(), loadMonthlyOrderLabels(), loadIndicatorLabels(), loadCollabLabels(), loadBgModeLabels(), loadModePillLabels(), loadRoleLabels(), loadReportHeaderConfig(), loadMonthlyColumnLabels(), loadMonthlyTableVisibility(), loadAttendLog(), loadPresenceSettings(), loadPendingCollaborators(), loadGsSidebarOrder(), loadNotifCounters(), loadSupplierOrderLabels(), loadSupplierAccountLabels(), loadWarehouseLabels(), loadDriverLabels()]);
   setInterval(async ()=>{
     const t = todayStr();
     if(t !== state.today){
