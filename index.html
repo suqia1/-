@@ -1667,7 +1667,7 @@ function renderAdminShell(){
     </div>`;
   bindTopbar();
   Array.from(document.querySelectorAll('[data-side]')).forEach(el=>{
-    el.addEventListener('click', async ()=>{
+    el.addEventListener('click', ()=>{
       state.adminTab = el.dataset.side;
       if(state.adminTab!=='livereports' && liveReportRefreshInterval){ clearInterval(liveReportRefreshInterval); liveReportRefreshInterval = null; }
       if(state.adminTab!=='online' && onlineUsersRefreshInterval){ clearInterval(onlineUsersRefreshInterval); onlineUsersRefreshInterval = null; }
@@ -1675,12 +1675,11 @@ function renderAdminShell(){
       Array.from(document.querySelectorAll('[data-side]')).forEach(x=>{
         x.classList.toggle('active', x.dataset.side===state.adminTab);
       });
-      await markNotifSeen(state.adminTab);
       el.classList.remove('has-notif');
       const badge = el.querySelector('.notif-badge, .notif-dot');
       if(badge) badge.remove();
-      refreshBellBadge();
-      renderAdminMain();
+      renderAdminMain(); // يُرسم القسم فورًا؛ تحديث "شوهد" وشارة الجرس يتمّان في الخلفية بلا انتظار
+      markNotifSeen(state.adminTab).then(refreshBellBadge);
     });
   });
   renderAdminMain();
@@ -3345,7 +3344,7 @@ function renderAdminLiveReports(main){
 }
 async function renderLiveReportDetail(main, mosqueId){
   if(liveReportRefreshInterval){ clearInterval(liveReportRefreshInterval); liveReportRefreshInterval = null; }
-  await markNotifSeen(`livereports__${mosqueId}`);
+  markNotifSeen(`livereports__${mosqueId}`).then(refreshBellBadge);
   const m = mosqueById(mosqueId);
   const minDate = oneMonthBack(state.today);
   if(!state.liveReportViewDate || state.liveReportViewDate < minDate || state.liveReportViewDate > state.today) state.liveReportViewDate = state.today;
@@ -5300,12 +5299,12 @@ function renderIndicatorSiteList(main){
     </button>`;
     }).join('') || `<p class="muted small">لا توجد مواقع نشطة.</p>`;
   Array.from(wrap.querySelectorAll('[data-open-ind-site]')).forEach(b=>{
-    b.addEventListener('click', async ()=>{
+    b.addEventListener('click', ()=>{
       state.indicatorSelectedMosque = b.dataset.openIndSite;
       state.indicatorDailyDate = state.today;
-      if(state.indicatorSelectedMosque!=='__all__') await markNotifSeen(`indicator__${state.indicatorSelectedMosque}`);
       if(state.indicatorSelectedMosque==='__all__' && state.indicatorMode==='daily') state.indicatorMode = 'current';
       renderIndicatorSiteDetail(main, state.indicatorSelectedMosque);
+      if(state.indicatorSelectedMosque!=='__all__') markNotifSeen(`indicator__${state.indicatorSelectedMosque}`).then(refreshBellBadge);
     });
   });
 }
@@ -7796,7 +7795,7 @@ function renderGeneralSupervisorShell(){
   bindTopbar();
   state.gsTab = state.gsSidebarOrder[0] || 'collabs';
   Array.from(document.querySelectorAll('[data-gs-side]')).forEach(el=>{
-    el.addEventListener('click', async ()=>{
+    el.addEventListener('click', ()=>{
       state.gsTab = el.dataset.gsSide;
       if(state.gsTab!=='livereports' && liveReportRefreshInterval){ clearInterval(liveReportRefreshInterval); liveReportRefreshInterval = null; }
       if(state.gsTab!=='online' && onlineUsersRefreshInterval){ clearInterval(onlineUsersRefreshInterval); onlineUsersRefreshInterval = null; }
@@ -7805,12 +7804,11 @@ function renderGeneralSupervisorShell(){
       Array.from(document.querySelectorAll('[data-gs-side]')).forEach(x=>{
         x.classList.toggle('active', x.dataset.gsSide===state.gsTab);
       });
-      await markNotifSeen(state.gsTab);
       el.classList.remove('has-notif');
       const badge = el.querySelector('.notif-badge, .notif-dot');
       if(badge) badge.remove();
-      refreshBellBadge();
       renderGsMain();
+      markNotifSeen(state.gsTab).then(refreshBellBadge);
     });
   });
   renderGsMain();
@@ -9379,7 +9377,7 @@ async function renderDriverViewPage(main){
       </div>
     `;
     Array.from(main.querySelectorAll('[data-drv-pick]')).forEach(b=>{
-      b.addEventListener('click', async ()=>{ await markNotifSeen(`driveradmin__${b.dataset.drvPick}`); state.drvViewSelected = b.dataset.drvPick; renderDriverViewPage(main); });
+      b.addEventListener('click', ()=>{ state.drvViewSelected = b.dataset.drvPick; renderDriverViewPage(main); markNotifSeen(`driveradmin__${b.dataset.drvPick}`).then(refreshBellBadge); });
     });
     document.getElementById('drvListPrevBtn').addEventListener('click', ()=>{ state.drvListDate = addDays(listDate, -1); renderDriverViewPage(main); });
     const listNextBtn = document.getElementById('drvListNextBtn');
@@ -9885,19 +9883,18 @@ function renderSupervisorShell(){
   bindTopbar();
   state.supTab = 'daily';
   Array.from(document.querySelectorAll('[data-sup-side]')).forEach(el=>{
-    el.addEventListener('click', async ()=>{
+    el.addEventListener('click', ()=>{
       state.supTab = el.dataset.supSide;
       if(state.supTab!=='supplierorder' && supplierOrderRefreshInterval){ clearInterval(supplierOrderRefreshInterval); supplierOrderRefreshInterval = null; }
       Array.from(document.querySelectorAll('[data-sup-side]')).forEach(x=>{
         x.classList.toggle('active', x.dataset.supSide===state.supTab);
       });
-      const notifKey = state.supTab==='daily' ? 'reports' : 'supplierorder';
-      await markNotifSeen(notifKey);
       el.classList.remove('has-notif');
       const badge = el.querySelector('.notif-badge, .notif-dot');
       if(badge) badge.remove();
-      refreshBellBadge();
       renderSupShellMain();
+      const notifKey = state.supTab==='daily' ? 'reports' : 'supplierorder';
+      markNotifSeen(notifKey).then(refreshBellBadge);
     });
   });
   renderSupShellMain();
