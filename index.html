@@ -596,7 +596,16 @@ try{
     supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   }
 }catch(e){ supabaseClient = null; }
-async function storageGet(key){
+/* ---------- ذاكرة مؤقتة للشبكة: تجعل فتح أي صفحة فوريًا عند زيارتها مجددًا، بدل إعادة الجلب من الخادم في كل مرة ----------
+   القراءات العادية (تصفّح الصفحات) تُعاد فورًا من الذاكرة إن كانت حديثة، ويُحدَّث المحتوى في الخلفية بصمت.
+   القراءات الحسّاسة (الحفظ، والتحديث الدوري المباشر) تمرّر fresh=true فتتجاوز الذاكرة وتقرأ من الخادم مباشرة. */
+const netCache = { data: {}, prefix: {} };
+const NET_CACHE_TTL = 15000;
+function netCacheInvalidateKey(key){
+  delete netCache.data[key];
+  Object.keys(netCache.prefix).forEach(p=>{ if(key.indexOf(p)===0) delete netCache.prefix[p]; });
+}
+async function storageGetNetwork(key){
   if(supabaseClient){
     try{
       const { data, error } = await supabaseClient.from('kv_store').select('value').eq('key', key).maybeSingle();
@@ -619,8 +628,23 @@ async function storageGet(key){
   }catch(e){ /* localStorage unavailable, e.g. sandboxed iframe */ }
   return memoryFallback[key] !== undefined ? memoryFallback[key] : null;
 }
+async function storageGet(key, fresh){
+  const now = Date.now();
+  const cached = netCache.data[key];
+  if(!fresh && cached){
+    if(now - cached.at >= NET_CACHE_TTL){
+      storageGetNetwork(key).then(v=>{ netCache.data[key] = {value:v, at:Date.now()}; }).catch(()=>{}); // تحديث صامت في الخلفية
+    }
+    return cached.value; // فوري — بلا أي انتظار للشبكة
+  }
+  const v = await storageGetNetwork(key);
+  netCache.data[key] = {value:v, at:Date.now()};
+  return v;
+}
 async function storageSet(key, val){
   let ok = false;
+  netCache.data[key] = {value:val, at:Date.now()}; // القيمة الجديدة تصبح هي المخزَّنة فورًا
+  Object.keys(netCache.prefix).forEach(p=>{ if(key.indexOf(p)===0) delete netCache.prefix[p]; });
   if(supabaseClient){
     try{
       const { error } = await supabaseClient.from('kv_store').upsert({ key, value: val, updated_at: new Date().toISOString() });
@@ -1055,7 +1079,7 @@ async function loadShowDemoHint(){ const v = await storageGet('skq_showdemo'); i
 async function saveShowDemoHint(){ return await storageSet('skq_showdemo', state.showDemoHint ? '1':'0'); }
 async function loadDemoHintText(){ const v = await storageGet('skq_demohint_text'); if(v!=null) state.demoHintText = v; }
 async function saveDemoHintText(){ return await storageSet('skq_demohint_text', state.demoHintText); }
-async function storageGetPrefix(prefix){
+async function storageGetPrefixNetwork(prefix){
   if(!supabaseClient) return null; // no batch capability without Supabase — caller falls back to per-key storageGet
   try{
     const { data, error } = await supabaseClient.from('kv_store').select('key,value').like('key', prefix+'%');
@@ -1068,6 +1092,19 @@ async function storageGetPrefix(prefix){
     return result;
   }catch(e){ return null; }
 }
+async function storageGetPrefix(prefix, fresh){
+  const now = Date.now();
+  const cached = netCache.prefix[prefix];
+  if(!fresh && cached){
+    if(now - cached.at >= NET_CACHE_TTL){
+      storageGetPrefixNetwork(prefix).then(v=>{ if(v) netCache.prefix[prefix] = {value:v, at:Date.now()}; }).catch(()=>{}); // تحديث صامت في الخلفية
+    }
+    return cached.value; // فوري — بلا أي انتظار للشبكة
+  }
+  const v = await storageGetPrefixNetwork(prefix);
+  if(v) netCache.prefix[prefix] = {value:v, at:Date.now()};
+  return v;
+}
 function defaultRecordShape(){
   return {openingStock:0,newCartons:0,openingStock200:0,openingStock330:0,newCartons200:0,newCartons330:0,withdrawals:[],notes:'',receipt:null,entryPhoto:null,exitPhoto:null,fridgePhoto:null,attendance:{},workHours:null,tankerArrival:'',tankerCount:0,qtyReceived:0,qtyDistributed:0,qtyReceived200:0,qtyReceived330:0,qtyDistributed200:0,qtyDistributed330:0,distributionStart:'',distributionEnd:'',waterColdness:'',savedAt:null,supplierArrivalTime:'',supplierOrderReceived:false,supplierOrderReceivedTime:'',supplierDeliveredQty:0,supplierDeliveredQty330:0,supplierDeliveredQty200:0,supplierReceiptPhoto:null,supplierOrderConfirmed:false,supplierExecutedTime:'',supplierManualAdd:0,supplierShortfallCounted:false,orderClaimedQty:0,orderRequestedQty:0,orderRequestedQty200:0,orderRequestedQty330:0,orderClaimedDays:[],orderCancelled:false,pendingManualQty:0,pendingManualQty200:0,pendingManualQty330:0,orderPendingGsApproval:false,orderRequestedTime:'',orderApprovedTime:'',supplierRecordSaved:false,supplierRecordSavedAt:'',gsApproved:false,gsApprovedAt:'',gsApprovedBy:''};
 }
@@ -1078,8 +1115,8 @@ function remainingBySize(rec, size){
   const news = size==='200' ? (Number(rec.newCartons200)||0) : (Number(rec.newCartons330)||0);
   return opening + news - withdrawnBySize(rec, size);
 }
-async function loadRecord(mosqueId,date){
-  const raw = await storageGet(recKey(mosqueId,date));
+async function loadRecord(mosqueId,date,fresh){
+  const raw = await storageGet(recKey(mosqueId,date), fresh);
   const rec = safeParse(raw, null);
   if(rec) return rec;
   return defaultRecordShape();
@@ -3376,7 +3413,7 @@ async function renderLiveReportDetail(main, mosqueId){
     const siteUsers = state.users.filter(u=>u.mosqueId===mosqueId && !state.presenceHidden[u.id]);
     const onlineOnes = [];
     await Promise.all(siteUsers.map(async u=>{
-      const raw = await storageGet('skq_presence__'+u.id);
+      const raw = await storageGet('skq_presence__'+u.id, true); // حالة الاتصال حسّاسة للوقت — تُقرأ دائمًا من الخادم
       const p = raw ? safeParse(raw, null) : null;
       if(p && (Date.now() - new Date(p.lastSeen).getTime()) < 30000){
         const jobTitle = (u.role==='recorder') ? state.roleLabels.recorder : state.roleLabels.supervisor;
@@ -3389,9 +3426,9 @@ async function renderLiveReportDetail(main, mosqueId){
   }
   await refreshPresence();
   async function refresh(){
-    const raw = isToday ? await storageGet(`skq_live__${mosqueId}__${viewDate}`) : null;
+    const raw = isToday ? await storageGet(`skq_live__${mosqueId}__${viewDate}`, true) : null;
     const rec = raw ? safeParse(raw, null) : null;
-    const official = await loadRecord(mosqueId, viewDate);
+    const official = await loadRecord(mosqueId, viewDate, true); // متابعة مباشرة — تُقرأ من الخادم دائمًا لا من الذاكرة المؤقتة
     const content = document.getElementById('liveReportContent');
     if(!content) return; // view changed
     const stamp = document.getElementById('liveLastUpdate');
@@ -3805,7 +3842,7 @@ async function renderOnlineUsersPage(main){
     });
     const openIds = Array.from(wrap.querySelectorAll('.visit-history-panel[data-open="1"]')).map(el=>el.dataset.uid);
     const rows = await Promise.all(visibleUsers.map(async u=>{
-      const raw = await storageGet('skq_presence__'+u.id);
+      const raw = await storageGet('skq_presence__'+u.id, true); // حالة الاتصال حسّاسة للوقت — تُقرأ دائمًا من الخادم
       const p = raw ? safeParse(raw, null) : null;
       const isOnline = p && (Date.now() - new Date(p.lastSeen).getTime()) < 30000;
       const siteName = u.mosqueId ? (mosqueById(u.mosqueId)?.name || '') : 'الإدارة';
@@ -9635,7 +9672,7 @@ async function renderRecorderMain(){
       pendingSyncCount++;
       queueRecordSave(mosqueId, state.today, async ()=>{
         try{
-          const latest = await loadRecord(mosqueId, state.today);
+          const latest = await loadRecord(mosqueId, state.today, true);
           if(!latest.withdrawals) latest.withdrawals = [];
           if(!latest.tankerWithdrawals) latest.tankerWithdrawals = [];
           latest[key].push(entry);
@@ -9653,7 +9690,7 @@ async function renderRecorderMain(){
     if(pendingSyncCount>0) return; // حفظ محلي لم يصل للخادم بعد — لا تُعِد الجلب الآن حتى لا يختفي مؤقتًا
     const active = document.activeElement;
     const isTyping = active && (active.tagName==='INPUT' || active.tagName==='SELECT' || active.tagName==='TEXTAREA');
-    const latest = await loadRecord(mosqueId, state.today);
+    const latest = await loadRecord(mosqueId, state.today, true);
     if(!latest.withdrawals) latest.withdrawals = [];
     if(!latest.tankerWithdrawals) latest.tankerWithdrawals = [];
     recorderRecord = latest;
@@ -9761,7 +9798,7 @@ function renderRecorderActionPoints(cfg, rec){
       pendingSyncCount++;
       queueRecordSave(mosqueId, state.today, async ()=>{
         try{
-          const latest = await loadRecord(mosqueId, state.today);
+          const latest = await loadRecord(mosqueId, state.today, true);
           if(!latest.actionPoints) latest.actionPoints = [];
           const latestPoint = latest.actionPoints.find(p=>p.id===pointId);
           if(latestPoint){
@@ -9789,7 +9826,7 @@ function renderRecorderActionPoints(cfg, rec){
       pendingSyncCount++;
       queueRecordSave(mosqueId, state.today, async ()=>{
         try{
-          const latest = await loadRecord(mosqueId, state.today);
+          const latest = await loadRecord(mosqueId, state.today, true);
           const latestPoint = (latest.actionPoints||[]).find(p=>p.id===pointId);
           if(latestPoint && latestPoint.withdrawals){
             latestPoint.withdrawals = latestPoint.withdrawals.filter(w=>w.id!==wid);
@@ -9830,7 +9867,7 @@ function renderRecorderLists(rec){
     Array.from(wrap.querySelectorAll('[data-rec-note]')).forEach(inp=>{
       inp.addEventListener('change', async ()=>{
         const [k,i] = inp.dataset.recNote.split(':');
-        const latest = await loadRecord(mosqueId, state.today);
+        const latest = await loadRecord(mosqueId, state.today, true);
         if(latest[k] && latest[k][+i] && latest[k][+i].createdBy===state.currentUser.id){
           latest[k][+i].note = inp.value;
           await storageSet(recKey(mosqueId, state.today), JSON.stringify(latest));
@@ -9840,7 +9877,7 @@ function renderRecorderLists(rec){
     Array.from(wrap.querySelectorAll('[data-rec-qty]')).forEach(inp=>{
       inp.addEventListener('change', async ()=>{
         const [k,i] = inp.dataset.recQty.split(':');
-        const latest = await loadRecord(mosqueId, state.today);
+        const latest = await loadRecord(mosqueId, state.today, true);
         if(latest[k] && latest[k][+i] && latest[k][+i].createdBy===state.currentUser.id){
           latest[k][+i].qty = Number(inp.value)||0;
           await storageSet(recKey(mosqueId, state.today), JSON.stringify(latest));
@@ -9850,7 +9887,7 @@ function renderRecorderLists(rec){
     Array.from(wrap.querySelectorAll('[data-rec-del]')).forEach(b=>{
       b.addEventListener('click', async ()=>{
         const [k,i] = b.dataset.recDel.split(':');
-        const latest = await loadRecord(mosqueId, state.today);
+        const latest = await loadRecord(mosqueId, state.today, true);
         if(latest[k] && latest[k][+i] && latest[k][+i].createdBy===state.currentUser.id){
           latest[k].splice(+i,1);
           await storageSet(recKey(mosqueId, state.today), JSON.stringify(latest));
@@ -10064,7 +10101,7 @@ async function renderSupervisorMain(){
       const active = document.activeElement;
       const isTyping = active && (active.tagName==='INPUT' || active.tagName==='SELECT' || active.tagName==='TEXTAREA');
       if(isTyping) return; // never overwrite the list while the supervisor is actively editing a field, even a qty/note keystroke
-      const latest = await loadRecord(mosqueId, state.supDate);
+      const latest = await loadRecord(mosqueId, state.supDate, true);
       // replace wholesale (not just merge additions) so deletions made by مسجل بيانات are also reflected live
       supRecord.withdrawals = latest.withdrawals || [];
       supRecord.tankerWithdrawals = latest.tankerWithdrawals || [];
@@ -10761,7 +10798,7 @@ function nowDateTime12(){
 async function persistSupWithdrawals(skipIndicator){
   const mosqueId = state.currentUser.mosqueId;
   await withPendingSync(()=> queueRecordSave(mosqueId, state.supDate, async ()=>{
-    const latest = await loadRecord(mosqueId, state.supDate);
+    const latest = await loadRecord(mosqueId, state.supDate, true);
     latest.withdrawals = supRecord.withdrawals;
     latest.tankerWithdrawals = supRecord.tankerWithdrawals;
     await storageSet(recKey(mosqueId, state.supDate), JSON.stringify(latest));
@@ -10771,7 +10808,7 @@ async function persistSupWithdrawals(skipIndicator){
 async function persistSupActionPoints(){
   const mosqueId = state.currentUser.mosqueId;
   await withPendingSync(()=> queueRecordSave(mosqueId, state.supDate, async ()=>{
-    const latest = await loadRecord(mosqueId, state.supDate);
+    const latest = await loadRecord(mosqueId, state.supDate, true);
     latest.actionPoints = supRecord.actionPoints;
     await storageSet(recKey(mosqueId, state.supDate), JSON.stringify(latest));
     await bumpNotifSite(['livereports','indicator'], mosqueId);
@@ -10784,7 +10821,7 @@ async function persistSupDraft(){
   if(!state.currentUser || !state.currentUser.mosqueId) return;
   const mosqueId = state.currentUser.mosqueId;
   await withPendingSync(()=> queueRecordSave(mosqueId, state.supDate, async ()=>{
-    const latest = await loadRecord(mosqueId, state.supDate);
+    const latest = await loadRecord(mosqueId, state.supDate, true);
     latest.entryPhoto = supRecord.entryPhoto;
     latest.exitPhoto = supRecord.exitPhoto;
     latest.fridgePhoto = supRecord.fridgePhoto;
@@ -11269,7 +11306,7 @@ async function saveSupervisorRecord(){
   const mosqueId = state.currentUser.mosqueId;
   // merge in any withdrawal entries added concurrently by مسجل بيانات users, so saving here never erases their work
   try{
-    const latest = await loadRecord(mosqueId, state.supDate);
+    const latest = await loadRecord(mosqueId, state.supDate, true);
     ['withdrawals','tankerWithdrawals'].forEach(key=>{
       const localIds = new Set((supRecord[key]||[]).map(w=>w.id).filter(Boolean));
       (latest[key]||[]).forEach(w=>{
