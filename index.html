@@ -3074,8 +3074,7 @@ async function delUser(id){
 /* ---- collaborators tab ---- */
 async function renderAdminCollabs(main){
   const isAdmin = state.currentUser.role === 'admin';
-  await loadPendingCollaborators(); // always fetch fresh so approvals/rejections/new requests show up without needing a reload
-  await loadCollaborators(); // same for the collaborators list itself, so approvals reach مشرف عام live too
+  await Promise.all([loadPendingCollaborators(), loadCollaborators()]); // always fetch fresh so approvals/rejections/new requests show up without needing a reload — تُنفَّذان بالتوازي بدل التتابع
   const jobOptionsList = (state.collabLabels.jobTitleOptions||[]).filter(o=>o.visible!==false);
   main.innerHTML = `
     <h2>${state.sidebarLabels.collabs}</h2>
@@ -9339,7 +9338,7 @@ async function renderDriverViewPage(main){
     const listDate = state.drvListDate;
     const isListToday = listDate === state.today;
     const totalsByDriver = {};
-    for(const d of drivers){ totalsByDriver[d.id] = await computeDriverDayTotals(d.id, listDate); }
+    await Promise.all(drivers.map(async d=>{ totalsByDriver[d.id] = await computeDriverDayTotals(d.id, listDate); }));
     const grandSupplied = drivers.reduce((s,d)=>s+totalsByDriver[d.id].supplied,0);
     const grandReturned = drivers.reduce((s,d)=>s+totalsByDriver[d.id].returned,0);
     const grandSupplied330 = drivers.reduce((s,d)=>s+(totalsByDriver[d.id].supplied330||0),0);
@@ -9394,7 +9393,7 @@ async function renderDriverViewPage(main){
   const isToday = viewDate === state.today;
   const sites = activeMosques();
   const recs = {};
-  for(const m of sites){ recs[m.id] = await loadDriverRecord(driverId, m.id, viewDate); }
+  await Promise.all(sites.map(async m=>{ recs[m.id] = await loadDriverRecord(driverId, m.id, viewDate); }));
   const summary = await loadDriverSummary(driverId, viewDate);
   const totalDelivered = sites.reduce((s,m)=>s+(Number(recs[m.id].deliveredQty)||0),0);
   const totalReturned = sites.reduce((s,m)=>s+(Number(recs[m.id].returnQty)||0),0);
@@ -9557,7 +9556,7 @@ async function renderRecorderMain(){
       <div class="col gap-sm" style="margin:12px 0" id="recList_${key}"></div>
       <div class="row gap-sm wrap" style="align-items:center">
         <input class="input" style="flex:1;min-width:140px" placeholder="البيان" id="new_${key}_note">
-        <input type="number" min="0" class="input" style="width:100px" placeholder="الكمية" id="new_${key}_qty">
+        <input type="number" inputmode="numeric" pattern="[0-9]*" min="0" class="input" style="width:100px" placeholder="الكمية" id="new_${key}_qty">
         <select class="input" style="width:100px" id="new_${key}_unit">
           <option value="bundle" selected>ربطة</option>
           <option value="carton">كرتون</option>
@@ -9717,7 +9716,7 @@ function renderRecorderActionPoints(cfg, rec){
               </div>`).join('') : `<p class="muted small">لا توجد كميات مسجّلة لهذه النقطة بعد.</p>`}
             <p class="small" style="margin:8px 0 0"><strong>الإجمالي: ${total} كرتون</strong></p>
             <div class="row gap-sm" style="margin-top:8px;align-items:center;flex-wrap:wrap">
-              <input type="number" min="0" class="input" style="width:90px" placeholder="الكمية" id="apQty_${p.id}" value="${(apQtyDraft[p.id]&&apQtyDraft[p.id].qty)||''}">
+              <input type="number" inputmode="numeric" pattern="[0-9]*" min="0" class="input" style="width:90px" placeholder="الكمية" id="apQty_${p.id}" value="${(apQtyDraft[p.id]&&apQtyDraft[p.id].qty)||''}">
               <select class="input" style="width:95px" id="apUnit_${p.id}">
                 <option value="bundle" ${(!apQtyDraft[p.id]||apQtyDraft[p.id].unit==='bundle')?'selected':''}>ربطة</option>
                 <option value="carton" ${(apQtyDraft[p.id]&&apQtyDraft[p.id].unit==='carton')?'selected':''}>كرتون</option>
@@ -9821,7 +9820,7 @@ function renderRecorderLists(rec){
     wrap.innerHTML = arr.length ? arr.map((w,i)=>`
       <div class="row gap-sm" style="align-items:center;border-bottom:1px solid #F1ECE0;padding:8px 2px;flex-wrap:wrap">
         <input class="input" style="flex:1;min-width:140px" placeholder="البيان" value="${w.note||''}" ${canEdit(w)?`data-rec-note="${key}:${i}"`:'disabled'}>
-        <input type="number" min="0" class="input" style="width:100px" value="${w.qty||0}" ${canEdit(w)?`data-rec-qty="${key}:${i}"`:'disabled'}>
+        <input type="number" inputmode="numeric" pattern="[0-9]*" min="0" class="input" style="width:100px" value="${w.qty||0}" ${canEdit(w)?`data-rec-qty="${key}:${i}"`:'disabled'}>
         <span class="muted small">${withdrawalQtyLabel(w)}</span>
         ${w.photo?`<img src="${w.photo}" style="width:32px;height:32px;object-fit:cover;border-radius:6px">`:''}
         <span class="muted small">${w.createdByName||'—'} — ${w.time||''}</span>
@@ -10361,7 +10360,7 @@ function renderWithdrawList(){
     return `
     <div class="withdraw-row">
       <input class="input" placeholder="بيان السحبة (مثال: الفترة المسائية)" value="${w.note||''}" data-w-note="${i}">
-      <input class="input" style="max-width:100px" type="number" min="0" placeholder="الكمية" value="${rawQty}" data-w-qty="${i}">
+      <input class="input" style="max-width:100px" type="number" inputmode="numeric" pattern="[0-9]*" min="0" placeholder="الكمية" value="${rawQty}" data-w-qty="${i}">
       <select class="input" style="max-width:100px" data-w-unit="${i}">
         <option value="bundle" ${unit==='bundle'?'selected':''}>ربطة</option>
         <option value="carton" ${unit==='carton'?'selected':''}>كرتون</option>
@@ -10457,7 +10456,7 @@ function renderTankerWithdrawList(){
       return `
       <div class="withdraw-row">
         <input class="input" placeholder="بيان السحبة (مثال: الفترة المسائية)" value="${w.note||''}" data-tw-note="${i}">
-        <input class="input" style="max-width:100px" type="number" min="0" placeholder="الكمية" value="${rawQty}" data-tw-qty="${i}">
+        <input class="input" style="max-width:100px" type="number" inputmode="numeric" pattern="[0-9]*" min="0" placeholder="الكمية" value="${rawQty}" data-tw-qty="${i}">
         <select class="input" style="max-width:100px" data-tw-unit="${i}">
           <option value="bundle" ${unit==='bundle'?'selected':''}>ربطة</option>
           <option value="carton" ${unit==='carton'?'selected':''}>كرتون</option>
@@ -11029,7 +11028,7 @@ function renderActionPoints(){
               </div>`).join('') : `<p class="muted small">لا توجد كميات مسجّلة بعد.</p>`}
             <p class="small" style="margin:4px 0 0"><strong>الإجمالي: ${total} كرتون</strong></p>
             <div class="row gap-sm" style="margin-top:6px;align-items:center;flex-wrap:wrap">
-              <input type="number" min="0" class="input" style="width:90px" placeholder="الكمية" id="apSupQty_${p.id}" value="${(apQtyDraft[p.id]&&apQtyDraft[p.id].qty)||''}">
+              <input type="number" inputmode="numeric" pattern="[0-9]*" min="0" class="input" style="width:90px" placeholder="الكمية" id="apSupQty_${p.id}" value="${(apQtyDraft[p.id]&&apQtyDraft[p.id].qty)||''}">
               <select class="input" style="width:95px" id="apSupUnit_${p.id}">
                 <option value="carton" ${(!apQtyDraft[p.id]||apQtyDraft[p.id].unit==='carton')?'selected':''}>كرتون</option>
                 <option value="bundle" ${(apQtyDraft[p.id]&&apQtyDraft[p.id].unit==='bundle')?'selected':''}>ربطة</option>
