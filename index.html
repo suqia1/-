@@ -3569,6 +3569,7 @@ async function syncAttendLogRosterForMonth(yyyymm, isCurrentMonth, monthData){
   if(!state.attendLogRoster[yyyymm]) state.attendLogRoster[yyyymm] = [];
   const roster = state.attendLogRoster[yyyymm];
   if(!isCurrentMonth) return;
+  const before = JSON.stringify(roster); // لا تكتب للخادم إلا إذا تغيّر شيء فعلًا — الكتابة في كل فتحة كانت تؤخّر ظهور الصفحة
   state.collaborators.forEach(c=>{
     const m = mosqueById(c.mosqueId);
     const jobTitle = (c.customFields && c.customFields.col_job_title) || '';
@@ -3615,7 +3616,7 @@ async function syncAttendLogRosterForMonth(yyyymm, isCurrentMonth, monthData){
     const jb = jobRank[b.jobTitle]!==undefined ? jobRank[b.jobTitle] : 999;
     return ja - jb;
   });
-  await saveAttendLogRoster();
+  if(JSON.stringify(roster) !== before) saveAttendLogRoster(); // في الخلفية وبلا انتظار، وفقط عند وجود تغيير فعلي
 }
 let onlineUsersRefreshInterval = null;
 let supplierViewRefreshInterval = null;
@@ -9586,11 +9587,11 @@ async function renderRecorderMain(){
   function sectionShellHTML(title, key){
     return `
     <div class="card" style="margin-bottom:18px">
-      <div class="row" style="justify-content:space-between;align-items:center">
-        <h3 style="margin:0">${title}</h3>
-        <span class="muted small" id="recTotal_${key}" style="font-weight:700"></span>
-      </div>
+      <h3 style="margin-top:0">${title}</h3>
       <div class="col gap-sm" style="margin:12px 0" id="recList_${key}"></div>
+      <div class="row" style="justify-content:flex-start;padding:8px 2px 10px;border-top:2px solid #E8E0CC;margin-top:4px">
+        <span class="small" id="recTotal_${key}" style="font-weight:800;color:var(--navy)"></span>
+      </div>
       <div class="row gap-sm wrap" style="align-items:center">
         <input class="input" style="flex:1;min-width:140px" placeholder="البيان" id="new_${key}_note">
         <input type="number" inputmode="numeric" pattern="[0-9]*" min="0" class="input" style="width:100px" placeholder="الكمية" id="new_${key}_qty">
@@ -9885,17 +9886,31 @@ function renderRecorderLists(rec){
       });
     });
     Array.from(wrap.querySelectorAll('[data-rec-del]')).forEach(b=>{
-      b.addEventListener('click', async ()=>{
+      b.addEventListener('click', ()=>{
         const [k,i] = b.dataset.recDel.split(':');
-        const latest = await loadRecord(mosqueId, state.today, true);
-        if(latest[k] && latest[k][+i] && latest[k][+i].createdBy===state.currentUser.id){
-          latest[k].splice(+i,1);
-          await storageSet(recKey(mosqueId, state.today), JSON.stringify(latest));
-          toast('تم حذف السحبة');
-          recorderRecord = latest;
-          renderRecorderLimitTarget(getFormConfig(state.currentUser.mosqueId), recorderRecord);
-          renderRecorderLists(recorderRecord);
-        }
+        const entry = recorderRecord[k] && recorderRecord[k][+i];
+        if(!entry || entry.createdBy!==state.currentUser.id) return;
+        const entryId = entry.id;
+        // احذف من الشاشة فورًا، ثم احفظ في الخلفية بالتتابع حتى لا تتعارض مع إضافات أخرى
+        recorderRecord[k].splice(+i,1);
+        renderRecorderLimitTarget(getFormConfig(state.currentUser.mosqueId), recorderRecord);
+        renderRecorderLists(recorderRecord);
+        toast('تم حذف السحبة');
+        pendingSyncCount++;
+        queueRecordSave(mosqueId, state.today, async ()=>{
+          try{
+            const latest = await loadRecord(mosqueId, state.today, true);
+            if(latest[k]){
+              const idx = entryId ? latest[k].findIndex(x=>x.id===entryId) : +i; // طابِق بالمعرّف لا بالترتيب، فقد يتغير الترتيب بإضافة مستخدم آخر
+              if(idx>-1 && latest[k][idx] && latest[k][idx].createdBy===state.currentUser.id){
+                latest[k].splice(idx,1);
+                const ok = await storageSet(recKey(mosqueId, state.today), JSON.stringify(latest));
+                if(ok) await bumpNotifSite(k==='tankerWithdrawals' ? ['livereports'] : ['livereports','indicator'], mosqueId);
+                else toast('تعذر الحفظ، حاول مرة أخرى','err');
+              }
+            }
+          } finally { pendingSyncCount--; }
+        });
       });
     });
   });
@@ -10120,14 +10135,14 @@ async function renderSupervisorMain(){
   const fridgeRowsMap = {
     opening: `<tr><td>${fr.fields.opening.label}</td><td>
       <span class="row gap-sm" style="align-items:center;flex-wrap:wrap">
-        <span class="muted small">330 مل</span><input type="number" min="0" class="input" style="max-width:100px" id="f_opening330" value="${supRecord.openingStock330||0}">
-        <span class="muted small">200 مل</span><input type="number" min="0" class="input" style="max-width:100px" id="f_opening200" value="${supRecord.openingStock200||0}">
+        <span class="muted small">330 مل</span><input type="number" inputmode="numeric" pattern="[0-9]*" min="0" class="input" style="max-width:100px" id="f_opening330" value="${supRecord.openingStock330||''}">
+        <span class="muted small">200 مل</span><input type="number" inputmode="numeric" pattern="[0-9]*" min="0" class="input" style="max-width:100px" id="f_opening200" value="${supRecord.openingStock200||''}">
       </span>
     </td></tr>`,
     newCartons: `<tr><td>${fr.fields.newCartons.label}</td><td>
       <span class="row gap-sm" style="align-items:center;flex-wrap:wrap">
-        <span class="muted small">330 مل</span><input type="number" min="0" class="input" style="max-width:100px" id="f_new330" value="${supRecord.newCartons330||0}">
-        <span class="muted small">200 مل</span><input type="number" min="0" class="input" style="max-width:100px" id="f_new200" value="${supRecord.newCartons200||0}">
+        <span class="muted small">330 مل</span><input type="number" inputmode="numeric" pattern="[0-9]*" min="0" class="input" style="max-width:100px" id="f_new330" value="${supRecord.newCartons330||''}">
+        <span class="muted small">200 مل</span><input type="number" inputmode="numeric" pattern="[0-9]*" min="0" class="input" style="max-width:100px" id="f_new200" value="${supRecord.newCartons200||''}">
       </span>
     </td></tr>`,
     totalWithdrawn: `<tr><td>${fr.fields.totalWithdrawn.label}</td><td>
@@ -10151,11 +10166,11 @@ async function renderSupervisorMain(){
               <button type="button" class="icon-btn" id="f_tankerTimeReset" title="إعادة تعيين الوقت">↺</button>
             </div>
           </td></tr>`,
-    count: `<tr><td>${tk.fields.count.label}</td><td><input type="number" min="0" class="input" id="f_tankerCount" value="${supRecord.tankerCount||0}"></td></tr>`,
+    count: `<tr><td>${tk.fields.count.label}</td><td><input type="number" inputmode="numeric" pattern="[0-9]*" min="0" class="input" id="f_tankerCount" value="${supRecord.tankerCount||''}"></td></tr>`,
     received: `<tr><td>${tk.fields.received.label}</td><td>
       <span class="row gap-sm" style="align-items:center;flex-wrap:wrap">
-        <span class="muted small">330 مل</span><input type="number" min="0" class="input" style="max-width:100px" id="f_qtyReceived330" value="${supRecord.qtyReceived330||0}">
-        <span class="muted small">200 مل</span><input type="number" min="0" class="input" style="max-width:100px" id="f_qtyReceived200" value="${supRecord.qtyReceived200||0}">
+        <span class="muted small">330 مل</span><input type="number" inputmode="numeric" pattern="[0-9]*" min="0" class="input" style="max-width:100px" id="f_qtyReceived330" value="${supRecord.qtyReceived330||''}">
+        <span class="muted small">200 مل</span><input type="number" inputmode="numeric" pattern="[0-9]*" min="0" class="input" style="max-width:100px" id="f_qtyReceived200" value="${supRecord.qtyReceived200||''}">
       </span>
     </td></tr>`,
     distributed: `<tr><td>${tk.fields.distributed.label}</td><td><span class="kv-readonly" id="f_qtyDistributed">0</span></td></tr>`,
@@ -10192,10 +10207,6 @@ async function renderSupervisorMain(){
           <div id="withdrawList"></div>
           <button class="btn btn-ghost btn-sm" id="addWithdrawBtn" style="margin-top:6px">+ إضافة سحبة</button>
         </div>
-        <div style="margin-top:16px">
-          <label class="label">${fr.statementTitle}</label>
-          <table class="kv-table" id="fridgeStatementTable"></table>
-        </div>
       </div>` : ''}
       ${tk.visible!==false ? `
       <div class="card grow" style="min-width:280px">
@@ -10207,10 +10218,6 @@ async function renderSupervisorMain(){
           <label class="label">${tk.withdrawLabel}</label>
           <div id="tankerWithdrawList"></div>
           <button class="btn btn-ghost btn-sm" id="addTankerWithdrawBtn" style="margin-top:6px">+ إضافة سحبة</button>
-        </div>
-        <div style="margin-top:16px">
-          <label class="label">${tk.statementTitle}</label>
-          <table class="kv-table" id="tankerStatementTable"></table>
         </div>
       </div>` : ''}
     </div>
@@ -10344,8 +10351,8 @@ async function renderSupervisorMain(){
   on('f_distEnd','change', ()=>{ supRecord.distributionEnd = document.getElementById('f_distEnd').value||''; persistSupDraft(); });
   on('f_distStartReset','click', ()=>{ const el=document.getElementById('f_distStart'); if(el) el.value=''; supRecord.distributionStart=''; persistSupDraft(); });
   on('f_distEndReset','click', ()=>{ const el=document.getElementById('f_distEnd'); if(el) el.value=''; supRecord.distributionEnd=''; persistSupDraft(); });
-  on('addWithdrawBtn','click', async ()=>{ supRecord.withdrawals.push({id:'w_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), note:'', qty:0, unit:'bundle', rawQty:0, createdBy:state.currentUser.id, createdByName:state.currentUser.name, time:nowTime12()}); renderWithdrawList(); updateStats(); await persistSupWithdrawals(); });
-  on('addTankerWithdrawBtn','click', async ()=>{ if(!supRecord.tankerWithdrawals) supRecord.tankerWithdrawals=[]; supRecord.tankerWithdrawals.push({id:'w_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), note:'', qty:0, unit:'bundle', rawQty:0, createdBy:state.currentUser.id, createdByName:state.currentUser.name, time:nowTime12()}); renderTankerWithdrawList(); updateStats(); await persistSupWithdrawals(true); });
+  on('addWithdrawBtn','click', async ()=>{ supRecord.withdrawals.push({id:'w_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), note:'', qty:0, unit:'bundle', rawQty:'', createdBy:state.currentUser.id, createdByName:state.currentUser.name, time:nowTime12()}); renderWithdrawList(); updateStats(); await persistSupWithdrawals(); });
+  on('addTankerWithdrawBtn','click', async ()=>{ if(!supRecord.tankerWithdrawals) supRecord.tankerWithdrawals=[]; supRecord.tankerWithdrawals.push({id:'w_'+Date.now()+'_'+Math.random().toString(36).slice(2,7), note:'', qty:0, unit:'bundle', rawQty:'', createdBy:state.currentUser.id, createdByName:state.currentUser.name, time:nowTime12()}); renderTankerWithdrawList(); updateStats(); await persistSupWithdrawals(true); });
 
   renderWithdrawList();
   renderTankerWithdrawList();
@@ -10390,32 +10397,38 @@ function renderWithdrawList(){
   if(!supRecord.withdrawals.length){
     wrap.innerHTML = `<p class="muted small">لا توجد سحوبات مضافة بعد.</p>`;
   } else {
-  wrap.innerHTML = supRecord.withdrawals.map((w,i)=>{
-    const unit = w.unit || 'carton';
-    const size = w.bottleSize || '330';
-    const rawQty = w.rawQty!==undefined ? w.rawQty : (w.qty||0);
-    return `
-    <div class="withdraw-row">
-      <input class="input" placeholder="بيان السحبة (مثال: الفترة المسائية)" value="${w.note||''}" data-w-note="${i}">
-      <input class="input" style="max-width:100px" type="number" inputmode="numeric" pattern="[0-9]*" min="0" placeholder="الكمية" value="${rawQty}" data-w-qty="${i}">
-      <select class="input" style="max-width:100px" data-w-unit="${i}">
-        <option value="bundle" ${unit==='bundle'?'selected':''}>ربطة</option>
-        <option value="carton" ${unit==='carton'?'selected':''}>كرتون</option>
-      </select>
-      <select class="input" style="max-width:100px" data-w-size="${i}" title="حجم العبوة">
-        <option value="330" ${size==='330'?'selected':''}>330 مل</option>
-        <option value="200" ${size==='200'?'selected':''}>200 مل</option>
-      </select>
-      <span class="muted small">${withdrawalQtyLabel(w)}</span>
-      ${showPhoto ? `
-      <label class="icon-btn" style="cursor:pointer" title="تصوير">📷
-        <input type="file" accept="image/*" capture="environment" style="display:none" data-w-photo="${i}">
-      </label>
-      ${w.photo ? `<img src="${w.photo}" style="width:32px;height:32px;object-fit:cover;border-radius:6px">` : ''}` : ''}
-      ${w.createdByName ? `<span class="muted small">${w.createdByName} — ${w.time||''}</span>` : ''}
-      <button class="icon-btn" data-w-del="${i}">✕</button>
-    </div>
-  `;}).join('');
+  wrap.innerHTML = `<div style="overflow-x:auto"><table class="kv-table" style="min-width:480px">
+    <tr><th style="text-align:right">${cfg.fridge.statementColLabel}</th><th style="text-align:right">الكمية</th>${showPhoto?'<th style="text-align:right">صورة</th>':''}<th></th></tr>
+    ${supRecord.withdrawals.map((w,i)=>{
+      const unit = w.unit || 'bundle';
+      const size = w.bottleSize || '330';
+      const rawQty = w.rawQty!==undefined ? w.rawQty : (w.qty||0);
+      return `<tr>
+        <td><input class="input" placeholder="بيان السحبة (مثال: الفترة المسائية)" value="${w.note||''}" data-w-note="${i}"></td>
+        <td>
+          <div class="row gap-sm wrap" style="align-items:center">
+            <input class="input" style="max-width:85px" type="number" inputmode="numeric" pattern="[0-9]*" min="0" placeholder="الكمية" value="${rawQty||''}" data-w-qty="${i}">
+            <select class="input" style="max-width:90px" data-w-unit="${i}">
+              <option value="bundle" ${unit==='bundle'?'selected':''}>ربطة</option>
+              <option value="carton" ${unit==='carton'?'selected':''}>كرتون</option>
+            </select>
+            <select class="input" style="max-width:90px" data-w-size="${i}" title="حجم العبوة">
+              <option value="330" ${size==='330'?'selected':''}>330 مل</option>
+              <option value="200" ${size==='200'?'selected':''}>200 مل</option>
+            </select>
+          </div>
+        </td>
+        ${showPhoto ? `<td>
+          <label class="icon-btn" style="cursor:pointer" title="تصوير">📷
+            <input type="file" accept="image/*" capture="environment" style="display:none" data-w-photo="${i}">
+          </label>
+          ${w.photo ? `<img src="${w.photo}" style="width:32px;height:32px;object-fit:cover;border-radius:6px;vertical-align:middle;margin-right:4px">` : ''}
+          ${w.createdByName ? `<div class="muted small" style="white-space:nowrap">${w.createdByName} — ${w.time||''}</div>` : ''}
+        </td>` : ''}
+        <td><button class="icon-btn" data-w-del="${i}">✕</button></td>
+      </tr>`;
+    }).join('')}
+  </table></div>`;
   }
   Array.from(wrap.querySelectorAll('[data-w-size]')).forEach(el=>el.addEventListener('change', async e=>{
     supRecord.withdrawals[+el.dataset.wSize].bottleSize = e.target.value;
@@ -10423,7 +10436,6 @@ function renderWithdrawList(){
   }));
   Array.from(wrap.querySelectorAll('[data-w-note]')).forEach(el=>el.addEventListener('input', e=>{
     supRecord.withdrawals[+el.dataset.wNote].note = e.target.value;
-    renderFridgeStatementTable();
   }));
   Array.from(wrap.querySelectorAll('[data-w-note]')).forEach(el=>el.addEventListener('change', ()=>{ persistSupWithdrawals(); }));
   function recalcQty(i){
@@ -10435,7 +10447,6 @@ function renderWithdrawList(){
     supRecord.withdrawals[i].rawQty = Number(e.target.value)||0;
     recalcQty(i);
     updateStats();
-    renderFridgeStatementTable();
   }));
   Array.from(wrap.querySelectorAll('[data-w-qty]')).forEach(el=>el.addEventListener('change', ()=>{ persistSupWithdrawals(); }));
   Array.from(wrap.querySelectorAll('[data-w-unit]')).forEach(el=>el.addEventListener('change', async e=>{
@@ -10445,7 +10456,6 @@ function renderWithdrawList(){
     recalcQty(i);
     updateStats();
     renderWithdrawList();
-    renderFridgeStatementTable();
     await persistSupWithdrawals();
   }));
   Array.from(wrap.querySelectorAll('[data-w-photo]')).forEach(el=>el.addEventListener('change', async e=>{
@@ -10458,23 +10468,12 @@ function renderWithdrawList(){
       await persistSupWithdrawals();
     }catch(err){ toast('تعذر رفع الصورة','err'); }
   }));
-  Array.from(wrap.querySelectorAll('[data-w-del]')).forEach(el=>el.addEventListener('click', async ()=>{
+  Array.from(wrap.querySelectorAll('[data-w-del]')).forEach(el=>el.addEventListener('click', ()=>{
+    // احذف من الشاشة فورًا، ثم احفظ في الخلفية — بلا أي انتظار مرئي
     supRecord.withdrawals.splice(+el.dataset.wDel,1);
-    renderWithdrawList(); updateStats(); renderFridgeStatementTable();
-    await persistSupWithdrawals();
+    renderWithdrawList(); updateStats();
+    persistSupWithdrawals();
   }));
-  renderFridgeStatementTable();
-}
-function renderFridgeStatementTable(){
-  const table = document.getElementById('fridgeStatementTable');
-  if(!table) return;
-  const cfg = getFormConfig(state.currentUser.mosqueId);
-  if(!supRecord.withdrawals.length){
-    table.innerHTML = `<tr><td class="muted small">لا توجد سحوبات مسجّلة بعد.</td></tr>`;
-    return;
-  }
-  table.innerHTML = `<tr><td><strong>الكمية</strong></td><td><strong>${cfg.fridge.statementColLabel}</strong></td>${cfg.fridge.showWithdrawPhoto!==false?'<td><strong>صورة</strong></td>':''}</tr>` +
-    supRecord.withdrawals.map(w=>`<tr><td>${w.qty||0}</td><td>${w.note || '<span class="muted">—</span>'}</td>${cfg.fridge.showWithdrawPhoto!==false?`<td>${w.photo?`<img src="${w.photo}" style="width:32px;height:32px;object-fit:cover;border-radius:6px">`:'<span class="muted">—</span>'}</td>`:''}</tr>`).join('');
 }
 function renderTankerWithdrawList(){
   const wrap = document.getElementById('tankerWithdrawList');
@@ -10486,32 +10485,38 @@ function renderTankerWithdrawList(){
   if(!supRecord.tankerWithdrawals.length){
     wrap.innerHTML = `<p class="muted small">لا توجد سحوبات مضافة بعد.</p>`;
   } else {
-    wrap.innerHTML = supRecord.tankerWithdrawals.map((w,i)=>{
-      const unit = w.unit || 'carton';
-      const size = w.bottleSize || '330';
-      const rawQty = w.rawQty!==undefined ? w.rawQty : (w.qty||0);
-      return `
-      <div class="withdraw-row">
-        <input class="input" placeholder="بيان السحبة (مثال: الفترة المسائية)" value="${w.note||''}" data-tw-note="${i}">
-        <input class="input" style="max-width:100px" type="number" inputmode="numeric" pattern="[0-9]*" min="0" placeholder="الكمية" value="${rawQty}" data-tw-qty="${i}">
-        <select class="input" style="max-width:100px" data-tw-unit="${i}">
-          <option value="bundle" ${unit==='bundle'?'selected':''}>ربطة</option>
-          <option value="carton" ${unit==='carton'?'selected':''}>كرتون</option>
-        </select>
-        <select class="input" style="max-width:100px" data-tw-size="${i}" title="حجم العبوة">
-          <option value="330" ${size==='330'?'selected':''}>330 مل</option>
-          <option value="200" ${size==='200'?'selected':''}>200 مل</option>
-        </select>
-        <span class="muted small">${withdrawalQtyLabel(w)}</span>
-        ${showPhoto ? `
-        <label class="icon-btn" style="cursor:pointer" title="تصوير">📷
-          <input type="file" accept="image/*" capture="environment" style="display:none" data-tw-photo="${i}">
-        </label>
-        ${w.photo ? `<img src="${w.photo}" style="width:32px;height:32px;object-fit:cover;border-radius:6px">` : ''}` : ''}
-        ${w.createdByName ? `<span class="muted small">${w.createdByName} — ${w.time||''}</span>` : ''}
-        <button class="icon-btn" data-tw-del="${i}">✕</button>
-      </div>
-    `;}).join('');
+    wrap.innerHTML = `<div style="overflow-x:auto"><table class="kv-table" style="min-width:480px">
+      <tr><th style="text-align:right">${cfg.tankers.statementColLabel}</th><th style="text-align:right">الكمية</th>${showPhoto?'<th style="text-align:right">صورة</th>':''}<th></th></tr>
+      ${supRecord.tankerWithdrawals.map((w,i)=>{
+        const unit = w.unit || 'bundle';
+        const size = w.bottleSize || '330';
+        const rawQty = w.rawQty!==undefined ? w.rawQty : (w.qty||0);
+        return `<tr>
+          <td><input class="input" placeholder="بيان السحبة (مثال: الفترة المسائية)" value="${w.note||''}" data-tw-note="${i}"></td>
+          <td>
+            <div class="row gap-sm wrap" style="align-items:center">
+              <input class="input" style="max-width:85px" type="number" inputmode="numeric" pattern="[0-9]*" min="0" placeholder="الكمية" value="${rawQty||''}" data-tw-qty="${i}">
+              <select class="input" style="max-width:90px" data-tw-unit="${i}">
+                <option value="bundle" ${unit==='bundle'?'selected':''}>ربطة</option>
+                <option value="carton" ${unit==='carton'?'selected':''}>كرتون</option>
+              </select>
+              <select class="input" style="max-width:90px" data-tw-size="${i}" title="حجم العبوة">
+                <option value="330" ${size==='330'?'selected':''}>330 مل</option>
+                <option value="200" ${size==='200'?'selected':''}>200 مل</option>
+              </select>
+            </div>
+          </td>
+          ${showPhoto ? `<td>
+            <label class="icon-btn" style="cursor:pointer" title="تصوير">📷
+              <input type="file" accept="image/*" capture="environment" style="display:none" data-tw-photo="${i}">
+            </label>
+            ${w.photo ? `<img src="${w.photo}" style="width:32px;height:32px;object-fit:cover;border-radius:6px;vertical-align:middle;margin-right:4px">` : ''}
+            ${w.createdByName ? `<div class="muted small" style="white-space:nowrap">${w.createdByName} — ${w.time||''}</div>` : ''}
+          </td>` : ''}
+          <td><button class="icon-btn" data-tw-del="${i}">✕</button></td>
+        </tr>`;
+      }).join('')}
+    </table></div>`;
   }
   Array.from(wrap.querySelectorAll('[data-tw-size]')).forEach(el=>el.addEventListener('change', async e=>{
     supRecord.tankerWithdrawals[+el.dataset.twSize].bottleSize = e.target.value;
@@ -10523,7 +10528,6 @@ function renderTankerWithdrawList(){
   }
   Array.from(wrap.querySelectorAll('[data-tw-note]')).forEach(el=>el.addEventListener('input', e=>{
     supRecord.tankerWithdrawals[+el.dataset.twNote].note = e.target.value;
-    renderTankerStatementTable();
   }));
   Array.from(wrap.querySelectorAll('[data-tw-note]')).forEach(el=>el.addEventListener('change', ()=>{ persistSupWithdrawals(true); }));
   Array.from(wrap.querySelectorAll('[data-tw-qty]')).forEach(el=>el.addEventListener('input', e=>{
@@ -10531,7 +10535,6 @@ function renderTankerWithdrawList(){
     supRecord.tankerWithdrawals[i].rawQty = Number(e.target.value)||0;
     recalcTwQty(i);
     updateStats();
-    renderTankerStatementTable();
   }));
   Array.from(wrap.querySelectorAll('[data-tw-qty]')).forEach(el=>el.addEventListener('change', ()=>{ persistSupWithdrawals(true); }));
   Array.from(wrap.querySelectorAll('[data-tw-unit]')).forEach(el=>el.addEventListener('change', async e=>{
@@ -10541,7 +10544,6 @@ function renderTankerWithdrawList(){
     recalcTwQty(i);
     updateStats();
     renderTankerWithdrawList();
-    renderTankerStatementTable();
     await persistSupWithdrawals(true);
   }));
   Array.from(wrap.querySelectorAll('[data-tw-photo]')).forEach(el=>el.addEventListener('change', async e=>{
@@ -10554,23 +10556,12 @@ function renderTankerWithdrawList(){
       await persistSupWithdrawals(true);
     }catch(err){ toast('تعذر رفع الصورة','err'); }
   }));
-  Array.from(wrap.querySelectorAll('[data-tw-del]')).forEach(el=>el.addEventListener('click', async ()=>{
+  Array.from(wrap.querySelectorAll('[data-tw-del]')).forEach(el=>el.addEventListener('click', ()=>{
+    // احذف من الشاشة فورًا، ثم احفظ في الخلفية — بلا أي انتظار مرئي
     supRecord.tankerWithdrawals.splice(+el.dataset.twDel,1);
-    renderTankerWithdrawList(); updateStats(); renderTankerStatementTable();
-    await persistSupWithdrawals(true);
+    renderTankerWithdrawList(); updateStats();
+    persistSupWithdrawals(true);
   }));
-  renderTankerStatementTable();
-}
-function renderTankerStatementTable(){
-  const table = document.getElementById('tankerStatementTable');
-  if(!table) return;
-  const cfg = getFormConfig(state.currentUser.mosqueId);
-  if(!supRecord.tankerWithdrawals || !supRecord.tankerWithdrawals.length){
-    table.innerHTML = `<tr><td class="muted small">لا توجد سحوبات مسجّلة بعد.</td></tr>`;
-    return;
-  }
-  table.innerHTML = `<tr><td><strong>الكمية</strong></td><td><strong>${cfg.tankers.statementColLabel}</strong></td>${cfg.tankers.showWithdrawPhoto!==false?'<td><strong>صورة</strong></td>':''}</tr>` +
-    supRecord.tankerWithdrawals.map(w=>`<tr><td>${w.qty||0}</td><td>${w.note || '<span class="muted">—</span>'}</td>${cfg.tankers.showWithdrawPhoto!==false?`<td>${w.photo?`<img src="${w.photo}" style="width:32px;height:32px;object-fit:cover;border-radius:6px">`:'<span class="muted">—</span>'}</td>`:''}</tr>`).join('');
 }
 function updateStats(){
   const gv = (id)=>{ const el=document.getElementById(id); return el ? (Number(el.value)||0) : null; };
