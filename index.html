@@ -234,6 +234,30 @@
   .withdraw-row .input{flex:1;}
   .icon-btn{background:#FBEAE9;color:var(--red);border:none;width:34px;height:34px;border-radius:9px;font-weight:900;flex-shrink:0;}
 
+  /* صف سحبة واحد: حقل الكمية وحقل البيان أعلى بعضهما، وتحتهما إمّا الملخّص المحسوب (بعد إدخال كمية) أو أدوات الحجم/الوحدة (قبل إدخال كمية) */
+  .w-entry{padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid var(--line);}
+  .w-entry:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0;}
+  .w-entry-top{display:flex;gap:10px;}
+  .w-entry-top .input{flex:1;min-width:0;}
+  .w-summary-row{display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap;}
+  .w-summary-row .txt{font-size:13px;color:var(--ink-soft);font-weight:600;}
+  .w-pick-row{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;}
+  .w-pick-row select.input{max-width:100px;flex:0 0 auto;}
+  .w-total-line{font-weight:900;color:var(--deep);font-size:14px;margin:6px 0 14px;padding-top:14px;border-top:2px solid var(--line);}
+
+  /* بيان السحوبات: جدول للعرض فقط، كل سحبة بطاقة عمودية (تسمية بالأزرق الغامق على اليمين، القيمة على اليسار)، وخط فاصل بين كل سحبة وأخرى */
+  .ws-wrap{background:#fff;border:1px solid var(--line);border-radius:12px;padding:4px 14px;}
+  .ws-card{padding:14px 0;border-bottom:1px solid var(--line);}
+  .ws-card:last-child{border-bottom:none;}
+  .ws-line{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:5px 0;}
+  .ws-line .ws-lbl{font-weight:800;color:var(--deep);font-size:13.5px;white-space:nowrap;flex-shrink:0;}
+  .ws-line .ws-val{font-weight:700;color:var(--ink);font-size:14px;text-align:left;}
+  .ws-total-line{font-weight:900;color:var(--deep);font-size:14px;padding:14px 0 4px;border-top:2px solid var(--line);margin-top:4px;}
+
+  @media(max-width:420px){
+    .w-summary-row .txt{font-size:12.3px;}
+  }
+
   .toast-wrap{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:100;display:flex;flex-direction:column;gap:8px;align-items:center;}
   .toast{background:var(--ink);color:#fff;padding:12px 20px;border-radius:12px;font-size:13.5px;font-weight:600;box-shadow:0 8px 20px rgba(0,0,0,.25);
     animation:toastin .2s ease;}
@@ -255,6 +279,12 @@
     .main{padding:18px;}
     .row{flex-wrap:wrap;}
     table{display:block;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  }
+  @media(max-width:420px){
+    /* جوالات صغيرة: تصغير الحشوات والخطوط قليلًا تلقائيًا بدل تمرير أفقي للمحتوى */
+    .main{padding:12px;}
+    .stat-grid{grid-template-columns:repeat(2,1fr);gap:10px;}
+    .card{padding:14px;}
   }
   :focus-visible{outline:3px solid var(--teal);outline-offset:2px;}
   #printAreaWrap{position:fixed;top:-99999px;left:-99999px;}
@@ -562,6 +592,29 @@ function toEnglishDigits(str){
   const eastern = '٠١٢٣٤٥٦٧٨٩';
   return String(str).replace(/[٠-٩]/g, d => eastern.indexOf(d));
 }
+// يحوّل أي أرقام عربية مكتوبة (٠١٢٣...) إلى إنجليزية فورًا ويحذف أي رمز غير رقمي — يُستخدم في حقول الكمية بدل type="number"
+// التي كانت تُفرغ نفسها (وتتحوّل إلى 0 عمليًا) عند كتابة رقم عربي لأنها لا تقبل غير الأرقام الإنجليزية حسب معيار HTML
+function sanitizeDigitsValue(str){
+  return toEnglishDigits(str||'').replace(/[^0-9]/g,'');
+}
+function escapeHtml(str){
+  return String(str==null?'':str).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+// يُربط بحقل كمية نصّي (type="text" + inputmode="numeric"): يحوّل ما يُكتب فيه لحظيًا لأرقام إنجليزية نظيفة،
+// ويستدعي onChange بالقيمة النظيفة (نص فارغ إن لم يُكتب شيء — لا يتحول تلقائيًا لصفر)
+function bindQtyDigitsInput(el, onChange){
+  if(!el) return;
+  el.addEventListener('input', ()=>{
+    const clean = sanitizeDigitsValue(el.value);
+    if(el.value !== clean){
+      const pos = el.selectionStart;
+      const diff = el.value.length - clean.length;
+      el.value = clean;
+      try{ el.setSelectionRange(Math.max(0,(pos||0)-diff), Math.max(0,(pos||0)-diff)); }catch(e){}
+    }
+    if(onChange) onChange(clean);
+  });
+}
 function hijriDate(dateStr){
   const [y,m,d] = dateStr.split('-').map(Number);
   const dt = new Date(y,m-1,d);
@@ -605,16 +658,23 @@ function netCacheInvalidateKey(key){
   delete netCache.data[key];
   Object.keys(netCache.prefix).forEach(p=>{ if(key.indexOf(p)===0) delete netCache.prefix[p]; });
 }
+const NET_TIMEOUT_MS = 8000; // كانت طلبات Supabase بلا أي مهلة زمنية، فإذا تعثّر الاتصال يبقى الطلب معلّقًا دقيقتين أو أكثر (حسب مهلة المتصفح/الشبكة الافتراضية)، وبما أن المتصفح يحدّ عدد الاتصالات المتزامنة لنفس الخادم، تُحجَز خلفه بقية الطلبات (فتح أي قائمة أخرى) حتى ينتهي — فتظهر كل النوافذ فجأة معًا بعد تلك المهلة. هذه المهلة تجعل الطلب "يفشل" بسرعة فيتم اللجوء فورًا للنسخة المحلية المخزَّنة بدل الانتظار.
+function withNetTimeout(promiseLike, ms){
+  return new Promise((resolve, reject)=>{
+    const t = setTimeout(()=> reject(new Error('net-timeout')), ms || NET_TIMEOUT_MS);
+    Promise.resolve(promiseLike).then(v=>{ clearTimeout(t); resolve(v); }, e=>{ clearTimeout(t); reject(e); });
+  });
+}
 async function storageGetNetwork(key){
   if(supabaseClient){
     try{
-      const { data, error } = await supabaseClient.from('kv_store').select('value').eq('key', key).maybeSingle();
+      const { data, error } = await withNetTimeout(supabaseClient.from('kv_store').select('value').eq('key', key).maybeSingle());
       if(!error && data && data.value != null){
         try{ localStorage.setItem('saqya::'+key, data.value); }catch(e){}
         return data.value;
       }
       if(!error && !data) return null; // confirmed: key genuinely doesn't exist yet
-    }catch(e){ /* network/connection issue — fall through to local cache below */ }
+    }catch(e){ /* network/connection issue or timeout — fall through to local cache below */ }
   }
   if(hasClaudeStorage()){
     try{
@@ -647,7 +707,7 @@ async function storageSet(key, val){
   Object.keys(netCache.prefix).forEach(p=>{ if(key.indexOf(p)===0) delete netCache.prefix[p]; });
   if(supabaseClient){
     try{
-      const { error } = await supabaseClient.from('kv_store').upsert({ key, value: val, updated_at: new Date().toISOString() });
+      const { error } = await withNetTimeout(supabaseClient.from('kv_store').upsert({ key, value: val, updated_at: new Date().toISOString() }));
       ok = !error;
     }catch(e){ ok = false; }
   }
@@ -1082,7 +1142,7 @@ async function saveDemoHintText(){ return await storageSet('skq_demohint_text', 
 async function storageGetPrefixNetwork(prefix){
   if(!supabaseClient) return null; // no batch capability without Supabase — caller falls back to per-key storageGet
   try{
-    const { data, error } = await supabaseClient.from('kv_store').select('key,value').like('key', prefix+'%');
+    const { data, error } = await withNetTimeout(supabaseClient.from('kv_store').select('key,value').like('key', prefix+'%'));
     if(error || !data) return null;
     const result = {};
     data.forEach(row=>{
@@ -10135,14 +10195,14 @@ async function renderSupervisorMain(){
   const fridgeRowsMap = {
     opening: `<tr><td>${fr.fields.opening.label}</td><td>
       <span class="row gap-sm" style="align-items:center;flex-wrap:wrap">
-        <span class="muted small">330 مل</span><input type="number" inputmode="numeric" pattern="[0-9]*" min="0" class="input" style="max-width:100px" id="f_opening330" value="${supRecord.openingStock330||''}">
-        <span class="muted small">200 مل</span><input type="number" inputmode="numeric" pattern="[0-9]*" min="0" class="input" style="max-width:100px" id="f_opening200" value="${supRecord.openingStock200||''}">
+        <span class="muted small">330 مل</span><input type="text" inputmode="numeric" pattern="[0-9]*" class="input" style="max-width:100px" id="f_opening330" value="${supRecord.openingStock330||''}">
+        <span class="muted small">200 مل</span><input type="text" inputmode="numeric" pattern="[0-9]*" class="input" style="max-width:100px" id="f_opening200" value="${supRecord.openingStock200||''}">
       </span>
     </td></tr>`,
     newCartons: `<tr><td>${fr.fields.newCartons.label}</td><td>
       <span class="row gap-sm" style="align-items:center;flex-wrap:wrap">
-        <span class="muted small">330 مل</span><input type="number" inputmode="numeric" pattern="[0-9]*" min="0" class="input" style="max-width:100px" id="f_new330" value="${supRecord.newCartons330||''}">
-        <span class="muted small">200 مل</span><input type="number" inputmode="numeric" pattern="[0-9]*" min="0" class="input" style="max-width:100px" id="f_new200" value="${supRecord.newCartons200||''}">
+        <span class="muted small">330 مل</span><input type="text" inputmode="numeric" pattern="[0-9]*" class="input" style="max-width:100px" id="f_new330" value="${supRecord.newCartons330||''}">
+        <span class="muted small">200 مل</span><input type="text" inputmode="numeric" pattern="[0-9]*" class="input" style="max-width:100px" id="f_new200" value="${supRecord.newCartons200||''}">
       </span>
     </td></tr>`,
     totalWithdrawn: `<tr><td>${fr.fields.totalWithdrawn.label}</td><td>
@@ -10166,11 +10226,11 @@ async function renderSupervisorMain(){
               <button type="button" class="icon-btn" id="f_tankerTimeReset" title="إعادة تعيين الوقت">↺</button>
             </div>
           </td></tr>`,
-    count: `<tr><td>${tk.fields.count.label}</td><td><input type="number" inputmode="numeric" pattern="[0-9]*" min="0" class="input" id="f_tankerCount" value="${supRecord.tankerCount||''}"></td></tr>`,
+    count: `<tr><td>${tk.fields.count.label}</td><td><input type="text" inputmode="numeric" pattern="[0-9]*" class="input" id="f_tankerCount" value="${supRecord.tankerCount||''}"></td></tr>`,
     received: `<tr><td>${tk.fields.received.label}</td><td>
       <span class="row gap-sm" style="align-items:center;flex-wrap:wrap">
-        <span class="muted small">330 مل</span><input type="number" inputmode="numeric" pattern="[0-9]*" min="0" class="input" style="max-width:100px" id="f_qtyReceived330" value="${supRecord.qtyReceived330||''}">
-        <span class="muted small">200 مل</span><input type="number" inputmode="numeric" pattern="[0-9]*" min="0" class="input" style="max-width:100px" id="f_qtyReceived200" value="${supRecord.qtyReceived200||''}">
+        <span class="muted small">330 مل</span><input type="text" inputmode="numeric" pattern="[0-9]*" class="input" style="max-width:100px" id="f_qtyReceived330" value="${supRecord.qtyReceived330||''}">
+        <span class="muted small">200 مل</span><input type="text" inputmode="numeric" pattern="[0-9]*" class="input" style="max-width:100px" id="f_qtyReceived200" value="${supRecord.qtyReceived200||''}">
       </span>
     </td></tr>`,
     distributed: `<tr><td>${tk.fields.distributed.label}</td><td><span class="kv-readonly" id="f_qtyDistributed">0</span></td></tr>`,
@@ -10207,6 +10267,10 @@ async function renderSupervisorMain(){
           <div id="withdrawList"></div>
           <button class="btn btn-ghost btn-sm" id="addWithdrawBtn" style="margin-top:6px">+ إضافة سحبة</button>
         </div>
+        <div style="margin-top:16px">
+          <label class="label">بيان السحوبات</label>
+          <div id="withdrawSummary"></div>
+        </div>
       </div>` : ''}
       ${tk.visible!==false ? `
       <div class="card grow" style="min-width:280px">
@@ -10218,6 +10282,10 @@ async function renderSupervisorMain(){
           <label class="label">${tk.withdrawLabel}</label>
           <div id="tankerWithdrawList"></div>
           <button class="btn btn-ghost btn-sm" id="addTankerWithdrawBtn" style="margin-top:6px">+ إضافة سحبة</button>
+        </div>
+        <div style="margin-top:16px">
+          <label class="label">بيان السحوبات</label>
+          <div id="tankerWithdrawSummary"></div>
         </div>
       </div>` : ''}
     </div>
@@ -10330,6 +10398,7 @@ async function renderSupervisorMain(){
     await storageSet(`skq_live__${mosqueId}__${state.supDate}`, JSON.stringify(supRecord));
     await bumpNotifSite(alsoIndicator ? ['livereports','indicator'] : ['livereports'], mosqueId);
   }
+  ['f_opening330','f_opening200','f_new330','f_new200','f_qtyReceived330','f_qtyReceived200','f_tankerCount'].forEach(id=>bindQtyDigitsInput(document.getElementById(id))); // يحوّل أي رقم عربي يُكتب هنا إلى إنجليزي فورًا قبل أي معالجة أخرى لهذه الحقول أدناه
   on('f_opening330','input', ()=>{ supRecord.openingStock330 = Number(document.getElementById('f_opening330').value)||0; supRecord.openingStock = (supRecord.openingStock330||0)+(supRecord.openingStock200||0); updateStats(); });
   on('f_opening330','change', ()=>{ pushLiveNow(true); persistSupDraft(); });
   on('f_opening200','input', ()=>{ supRecord.openingStock200 = Number(document.getElementById('f_opening200').value)||0; supRecord.openingStock = (supRecord.openingStock330||0)+(supRecord.openingStock200||0); updateStats(); });
@@ -10388,6 +10457,56 @@ async function renderSupervisorMain(){
   document.getElementById('saveBtn').addEventListener('click', saveSupervisorRecord);
 }
 
+function withdrawUnitLabel(u){ return u==='carton' ? 'كرتون' : 'ربطة'; }
+function withdrawOtherUnitLabel(u){ return u==='carton' ? 'ربطة' : 'كرتون'; }
+function withdrawOtherQty(n, unit, bpc){
+  const v = unit==='carton' ? (n*bpc) : (n/bpc);
+  return Number.isInteger(v) ? v : Math.round(v*10)/10;
+}
+function withdrawTotalHTML(list, bpc){
+  const totalCartons = list.reduce((s,w)=> s + (Number(w.qty)||0), 0); // w.qty دائمًا بمكافئ الكرتون (recalcQty يحوّله عند إدخال ربطات)
+  if(!totalCartons) return '';
+  const label = Number.isInteger(totalCartons) ? totalCartons : Math.round(totalCartons*10)/10;
+  return `<div class="w-total-line">إجمالي الكمية المسحوبة: ${label} كرتون</div>`;
+}
+function fmtRound1(v){ return Number.isInteger(v) ? v : Math.round(v*10)/10; }
+// جدول "بيان السحوبات" للعرض فقط — لا يوجد فيه أي حقل قابل للتعديل، ويُعاد بناؤه بالكامل من supRecord.withdrawals/tankerWithdrawals في كل مرة
+function withdrawSummaryEntryHTML(w, bpc){
+  const cartons = Number(w.qty)||0; // w.qty دائمًا مخزَّن بمكافئ الكرتون بصرف النظر عن الوحدة التي اختارها المشرف عند الإضافة
+  const bundles = cartons*bpc;
+  const qtyLabel = `${fmtRound1(bundles)} ربطات / ${fmtRound1(cartons)} كراتين`;
+  const sizeLabel = (w.bottleSize||'330') + ' مل';
+  return `<div class="ws-card">
+    <div class="ws-line"><span class="ws-lbl">الاسم</span><span class="ws-val">${w.createdByName ? escapeHtml(w.createdByName) : ''}</span></div>
+    <div class="ws-line"><span class="ws-lbl">الكمية</span><span class="ws-val">${qtyLabel}<br><span class="muted" style="font-size:11px">${sizeLabel}</span></span></div>
+    <div class="ws-line"><span class="ws-lbl">البيان</span><span class="ws-val">${w.note ? escapeHtml(w.note) : ''}</span></div>
+    <div class="ws-line"><span class="ws-lbl">الوقت</span><span class="ws-val">${w.time||''}</span></div>
+  </div>`;
+}
+function withdrawSummaryHTML(list, bpc){
+  if(!list || !list.length){
+    return `<p class="muted small">لا توجد سحوبات مسجَّلة بعد.</p>`;
+  }
+  // الإجمالي هنا للاستعراض فقط ولا يرتبط بأي حساب آخر في التقرير — يُحسب بتحويل كل سحبة لمكافئها بالكرتون أولًا (1 كرتون = ${bpc} ربطة) ثم الجمع، فلا يُخلَط جمع ربطات مع كراتين كما لو كانا نفس الوحدة
+  const totalCartons = list.reduce((s,w)=> s + (Number(w.qty)||0), 0);
+  const totalBundles = totalCartons*bpc;
+  const totalLine = totalCartons ? `<div class="ws-total-line">الإجمالي: ${fmtRound1(totalBundles)} ربطات / ${fmtRound1(totalCartons)} كراتين</div>` : '';
+  return `<div class="ws-wrap">${list.map(w=>withdrawSummaryEntryHTML(w,bpc)).join('')}${totalLine}</div>`;
+}
+function renderWithdrawSummary(){
+  const sumWrap = document.getElementById('withdrawSummary');
+  if(!sumWrap) return;
+  const cfg = getFormConfig(state.currentUser.mosqueId);
+  const bpc = cfg.fridge.bundlesPerCarton || 2;
+  sumWrap.innerHTML = withdrawSummaryHTML(supRecord.withdrawals, bpc);
+}
+function renderTankerWithdrawSummary(){
+  const sumWrap = document.getElementById('tankerWithdrawSummary');
+  if(!sumWrap) return;
+  const cfg = getFormConfig(state.currentUser.mosqueId);
+  const bpc = cfg.tankers.bundlesPerCarton || 2;
+  sumWrap.innerHTML = withdrawSummaryHTML(supRecord.tankerWithdrawals, bpc);
+}
 function renderWithdrawList(){
   const wrap = document.getElementById('withdrawList');
   if(!wrap) return;
@@ -10397,58 +10516,65 @@ function renderWithdrawList(){
   if(!supRecord.withdrawals.length){
     wrap.innerHTML = `<p class="muted small">لا توجد سحوبات مضافة بعد.</p>`;
   } else {
-  wrap.innerHTML = `<div style="overflow-x:auto"><table class="kv-table" style="min-width:480px">
-    <tr><th style="text-align:right">${cfg.fridge.statementColLabel}</th><th style="text-align:right">الكمية</th>${showPhoto?'<th style="text-align:right">صورة</th>':''}<th></th></tr>
-    ${supRecord.withdrawals.map((w,i)=>{
+  wrap.innerHTML = supRecord.withdrawals.map((w,i)=>{
       const unit = w.unit || 'bundle';
       const size = w.bottleSize || '330';
       const rawQty = w.rawQty!==undefined ? w.rawQty : (w.qty||0);
-      return `<tr>
-        <td><input class="input" placeholder="بيان السحبة (مثال: الفترة المسائية)" value="${w.note||''}" data-w-note="${i}"></td>
-        <td>
-          <div class="row gap-sm wrap" style="align-items:center">
-            <input class="input" style="max-width:85px" type="number" inputmode="numeric" pattern="[0-9]*" min="0" placeholder="الكمية" value="${rawQty||''}" data-w-qty="${i}">
-            <select class="input" style="max-width:90px" data-w-unit="${i}">
-              <option value="bundle" ${unit==='bundle'?'selected':''}>ربطة</option>
-              <option value="carton" ${unit==='carton'?'selected':''}>كرتون</option>
-            </select>
-            <select class="input" style="max-width:90px" data-w-size="${i}" title="حجم العبوة">
-              <option value="330" ${size==='330'?'selected':''}>330 مل</option>
-              <option value="200" ${size==='200'?'selected':''}>200 مل</option>
-            </select>
-          </div>
-        </td>
-        ${showPhoto ? `<td>
-          <label class="icon-btn" style="cursor:pointer" title="تصوير">📷
+      const n = Number(rawQty)||0;
+      const bottomHTML = n>0 ? `<div class="w-summary-row">
+          <button class="icon-btn" data-w-del="${i}">✕</button>
+          <span class="txt">${n} ${withdrawUnitLabel(unit)} (${withdrawOtherQty(n,unit,bpc)} ${withdrawOtherUnitLabel(unit)}) — ${size} مل${w.createdByName ? ' — '+escapeHtml(w.createdByName) : ''}${w.time ? ' '+w.time : ''}</span>
+        </div>` : `<div class="w-pick-row">
+          ${showPhoto ? `<label class="icon-btn" style="background:#EEF0F9;color:var(--deep);cursor:pointer" title="تصوير">📷
             <input type="file" accept="image/*" capture="environment" style="display:none" data-w-photo="${i}">
-          </label>
-          ${w.photo ? `<img src="${w.photo}" style="width:32px;height:32px;object-fit:cover;border-radius:6px;vertical-align:middle;margin-right:4px">` : ''}
-          ${w.createdByName ? `<div class="muted small" style="white-space:nowrap">${w.createdByName} — ${w.time||''}</div>` : ''}
-        </td>` : ''}
-        <td><button class="icon-btn" data-w-del="${i}">✕</button></td>
-      </tr>`;
-    }).join('')}
-  </table></div>`;
+          </label>` : ''}
+          <select class="input" data-w-size="${i}" title="سعة العبوة">
+            <option value="330" ${size==='330'?'selected':''}>330 مل</option>
+            <option value="200" ${size==='200'?'selected':''}>200 مل</option>
+          </select>
+          <select class="input" data-w-unit="${i}">
+            <option value="bundle" ${unit==='bundle'?'selected':''}>ربطة</option>
+            <option value="carton" ${unit==='carton'?'selected':''}>كرتون</option>
+          </select>
+          <button class="icon-btn" data-w-del="${i}" style="margin-right:auto">✕</button>
+        </div>`;
+      return `<div class="w-entry">
+        <div class="w-entry-top">
+          <input class="input" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="الكمية" value="${rawQty||''}" data-w-qty="${i}">
+          <input class="input" placeholder="${cfg.fridge.statementColLabel}" value="${w.note||''}" data-w-note="${i}">
+        </div>
+        ${bottomHTML}
+        ${w.photo ? `<img src="${w.photo}" style="width:36px;height:36px;object-fit:cover;border-radius:6px;margin-top:6px">` : ''}
+      </div>`;
+    }).join('') + withdrawTotalHTML(supRecord.withdrawals, bpc);
   }
   Array.from(wrap.querySelectorAll('[data-w-size]')).forEach(el=>el.addEventListener('change', async e=>{
     supRecord.withdrawals[+el.dataset.wSize].bottleSize = e.target.value;
+    renderWithdrawSummary();
     await persistSupWithdrawals();
   }));
   Array.from(wrap.querySelectorAll('[data-w-note]')).forEach(el=>el.addEventListener('input', e=>{
     supRecord.withdrawals[+el.dataset.wNote].note = e.target.value;
+    renderWithdrawSummary();
   }));
   Array.from(wrap.querySelectorAll('[data-w-note]')).forEach(el=>el.addEventListener('change', ()=>{ persistSupWithdrawals(); }));
   function recalcQty(i){
     const w = supRecord.withdrawals[i];
     w.qty = w.unit==='bundle' ? (Number(w.rawQty)||0)/bpc : (Number(w.rawQty)||0);
   }
-  Array.from(wrap.querySelectorAll('[data-w-qty]')).forEach(el=>el.addEventListener('input', e=>{
-    const i = +el.dataset.wQty;
-    supRecord.withdrawals[i].rawQty = Number(e.target.value)||0;
-    recalcQty(i);
-    updateStats();
-  }));
-  Array.from(wrap.querySelectorAll('[data-w-qty]')).forEach(el=>el.addEventListener('change', ()=>{ persistSupWithdrawals(); }));
+  Array.from(wrap.querySelectorAll('[data-w-qty]')).forEach(el=>{
+    bindQtyDigitsInput(el, clean=>{
+      const i = +el.dataset.wQty;
+      supRecord.withdrawals[i].rawQty = clean; // نصّ نظيف بأرقام إنجليزية، أو فارغ — لا يتحول تلقائيًا لصفر
+      recalcQty(i);
+      updateStats();
+      renderWithdrawSummary();
+    });
+    el.addEventListener('change', async ()=>{
+      renderWithdrawList(); // يبدّل الصف تلقائيًا بين وضع الاختيار ووضع الملخّص المحسوب فور إدخال/مسح الكمية
+      await persistSupWithdrawals();
+    });
+  });
   Array.from(wrap.querySelectorAll('[data-w-unit]')).forEach(el=>el.addEventListener('change', async e=>{
     const i = +el.dataset.wUnit;
     supRecord.withdrawals[i].unit = e.target.value;
@@ -10474,6 +10600,7 @@ function renderWithdrawList(){
     renderWithdrawList(); updateStats();
     persistSupWithdrawals();
   }));
+  renderWithdrawSummary();
 }
 function renderTankerWithdrawList(){
   const wrap = document.getElementById('tankerWithdrawList');
@@ -10485,41 +10612,41 @@ function renderTankerWithdrawList(){
   if(!supRecord.tankerWithdrawals.length){
     wrap.innerHTML = `<p class="muted small">لا توجد سحوبات مضافة بعد.</p>`;
   } else {
-    wrap.innerHTML = `<div style="overflow-x:auto"><table class="kv-table" style="min-width:480px">
-      <tr><th style="text-align:right">${cfg.tankers.statementColLabel}</th><th style="text-align:right">الكمية</th>${showPhoto?'<th style="text-align:right">صورة</th>':''}<th></th></tr>
-      ${supRecord.tankerWithdrawals.map((w,i)=>{
+    wrap.innerHTML = supRecord.tankerWithdrawals.map((w,i)=>{
         const unit = w.unit || 'bundle';
         const size = w.bottleSize || '330';
         const rawQty = w.rawQty!==undefined ? w.rawQty : (w.qty||0);
-        return `<tr>
-          <td><input class="input" placeholder="بيان السحبة (مثال: الفترة المسائية)" value="${w.note||''}" data-tw-note="${i}"></td>
-          <td>
-            <div class="row gap-sm wrap" style="align-items:center">
-              <input class="input" style="max-width:85px" type="number" inputmode="numeric" pattern="[0-9]*" min="0" placeholder="الكمية" value="${rawQty||''}" data-tw-qty="${i}">
-              <select class="input" style="max-width:90px" data-tw-unit="${i}">
-                <option value="bundle" ${unit==='bundle'?'selected':''}>ربطة</option>
-                <option value="carton" ${unit==='carton'?'selected':''}>كرتون</option>
-              </select>
-              <select class="input" style="max-width:90px" data-tw-size="${i}" title="حجم العبوة">
-                <option value="330" ${size==='330'?'selected':''}>330 مل</option>
-                <option value="200" ${size==='200'?'selected':''}>200 مل</option>
-              </select>
-            </div>
-          </td>
-          ${showPhoto ? `<td>
-            <label class="icon-btn" style="cursor:pointer" title="تصوير">📷
+        const n = Number(rawQty)||0;
+        const bottomHTML = n>0 ? `<div class="w-summary-row">
+            <button class="icon-btn" data-tw-del="${i}">✕</button>
+            <span class="txt">${n} ${withdrawUnitLabel(unit)} (${withdrawOtherQty(n,unit,bpc)} ${withdrawOtherUnitLabel(unit)}) — ${size} مل${w.createdByName ? ' — '+escapeHtml(w.createdByName) : ''}${w.time ? ' '+w.time : ''}</span>
+          </div>` : `<div class="w-pick-row">
+            ${showPhoto ? `<label class="icon-btn" style="background:#EEF0F9;color:var(--deep);cursor:pointer" title="تصوير">📷
               <input type="file" accept="image/*" capture="environment" style="display:none" data-tw-photo="${i}">
-            </label>
-            ${w.photo ? `<img src="${w.photo}" style="width:32px;height:32px;object-fit:cover;border-radius:6px;vertical-align:middle;margin-right:4px">` : ''}
-            ${w.createdByName ? `<div class="muted small" style="white-space:nowrap">${w.createdByName} — ${w.time||''}</div>` : ''}
-          </td>` : ''}
-          <td><button class="icon-btn" data-tw-del="${i}">✕</button></td>
-        </tr>`;
-      }).join('')}
-    </table></div>`;
+            </label>` : ''}
+            <select class="input" data-tw-size="${i}" title="سعة العبوة">
+              <option value="330" ${size==='330'?'selected':''}>330 مل</option>
+              <option value="200" ${size==='200'?'selected':''}>200 مل</option>
+            </select>
+            <select class="input" data-tw-unit="${i}">
+              <option value="bundle" ${unit==='bundle'?'selected':''}>ربطة</option>
+              <option value="carton" ${unit==='carton'?'selected':''}>كرتون</option>
+            </select>
+            <button class="icon-btn" data-tw-del="${i}" style="margin-right:auto">✕</button>
+          </div>`;
+        return `<div class="w-entry">
+          <div class="w-entry-top">
+            <input class="input" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="الكمية" value="${rawQty||''}" data-tw-qty="${i}">
+            <input class="input" placeholder="${cfg.tankers.statementColLabel}" value="${w.note||''}" data-tw-note="${i}">
+          </div>
+          ${bottomHTML}
+          ${w.photo ? `<img src="${w.photo}" style="width:36px;height:36px;object-fit:cover;border-radius:6px;margin-top:6px">` : ''}
+        </div>`;
+      }).join('') + withdrawTotalHTML(supRecord.tankerWithdrawals, bpc);
   }
   Array.from(wrap.querySelectorAll('[data-tw-size]')).forEach(el=>el.addEventListener('change', async e=>{
     supRecord.tankerWithdrawals[+el.dataset.twSize].bottleSize = e.target.value;
+    renderTankerWithdrawSummary();
     await persistSupWithdrawals(true);
   }));
   function recalcTwQty(i){
@@ -10528,15 +10655,22 @@ function renderTankerWithdrawList(){
   }
   Array.from(wrap.querySelectorAll('[data-tw-note]')).forEach(el=>el.addEventListener('input', e=>{
     supRecord.tankerWithdrawals[+el.dataset.twNote].note = e.target.value;
+    renderTankerWithdrawSummary();
   }));
   Array.from(wrap.querySelectorAll('[data-tw-note]')).forEach(el=>el.addEventListener('change', ()=>{ persistSupWithdrawals(true); }));
-  Array.from(wrap.querySelectorAll('[data-tw-qty]')).forEach(el=>el.addEventListener('input', e=>{
-    const i = +el.dataset.twQty;
-    supRecord.tankerWithdrawals[i].rawQty = Number(e.target.value)||0;
-    recalcTwQty(i);
-    updateStats();
-  }));
-  Array.from(wrap.querySelectorAll('[data-tw-qty]')).forEach(el=>el.addEventListener('change', ()=>{ persistSupWithdrawals(true); }));
+  Array.from(wrap.querySelectorAll('[data-tw-qty]')).forEach(el=>{
+    bindQtyDigitsInput(el, clean=>{
+      const i = +el.dataset.twQty;
+      supRecord.tankerWithdrawals[i].rawQty = clean; // نصّ نظيف بأرقام إنجليزية، أو فارغ — لا يتحول تلقائيًا لصفر
+      recalcTwQty(i);
+      updateStats();
+      renderTankerWithdrawSummary();
+    });
+    el.addEventListener('change', async ()=>{
+      renderTankerWithdrawList(); // يبدّل الصف تلقائيًا بين وضع الاختيار ووضع الملخّص المحسوب فور إدخال/مسح الكمية
+      await persistSupWithdrawals(true);
+    });
+  });
   Array.from(wrap.querySelectorAll('[data-tw-unit]')).forEach(el=>el.addEventListener('change', async e=>{
     const i = +el.dataset.twUnit;
     supRecord.tankerWithdrawals[i].unit = e.target.value;
@@ -10562,6 +10696,7 @@ function renderTankerWithdrawList(){
     renderTankerWithdrawList(); updateStats();
     persistSupWithdrawals(true);
   }));
+  renderTankerWithdrawSummary();
 }
 function updateStats(){
   const gv = (id)=>{ const el=document.getElementById(id); return el ? (Number(el.value)||0) : null; };
@@ -10788,20 +10923,25 @@ function nowDateTime12(){
 }
 async function persistSupWithdrawals(skipIndicator){
   const mosqueId = state.currentUser.mosqueId;
-  await withPendingSync(()=> queueRecordSave(mosqueId, state.supDate, async ()=>{
-    const latest = await loadRecord(mosqueId, state.supDate, true);
-    latest.withdrawals = supRecord.withdrawals;
-    latest.tankerWithdrawals = supRecord.tankerWithdrawals;
-    await storageSet(recKey(mosqueId, state.supDate), JSON.stringify(latest));
+  const date = state.supDate; // يُلتقط فورًا وليس داخل الدالة المؤجَّلة أدناه: state.supDate قد يتغيّر (بالتنقل ليوم آخر) قبل أن يُنفَّذ هذا الحفظ من الطابور، فتُكتب بيانات اليوم الحالي فوق يوم آخر خطأً
+  const withdrawalsSnapshot = supRecord.withdrawals;
+  const tankerWithdrawalsSnapshot = supRecord.tankerWithdrawals;
+  await withPendingSync(()=> queueRecordSave(mosqueId, date, async ()=>{
+    const latest = await loadRecord(mosqueId, date, true);
+    latest.withdrawals = withdrawalsSnapshot;
+    latest.tankerWithdrawals = tankerWithdrawalsSnapshot;
+    await storageSet(recKey(mosqueId, date), JSON.stringify(latest));
     await bumpNotifSite(skipIndicator ? ['livereports'] : ['livereports','indicator'], mosqueId); // notifies immediately on any addition, unlike المتابعة والتقارير which only notifies after the final daily save — tanker-table changes deliberately skip المؤشر per request
   }));
 }
 async function persistSupActionPoints(){
   const mosqueId = state.currentUser.mosqueId;
-  await withPendingSync(()=> queueRecordSave(mosqueId, state.supDate, async ()=>{
-    const latest = await loadRecord(mosqueId, state.supDate, true);
-    latest.actionPoints = supRecord.actionPoints;
-    await storageSet(recKey(mosqueId, state.supDate), JSON.stringify(latest));
+  const date = state.supDate; // انظر التعليق في persistSupWithdrawals أعلاه — نفس سبب الالتقاط الفوري لمنع كتابة يوم فوق آخر
+  const actionPointsSnapshot = supRecord.actionPoints;
+  await withPendingSync(()=> queueRecordSave(mosqueId, date, async ()=>{
+    const latest = await loadRecord(mosqueId, date, true);
+    latest.actionPoints = actionPointsSnapshot;
+    await storageSet(recKey(mosqueId, date), JSON.stringify(latest));
     await bumpNotifSite(['livereports','indicator'], mosqueId);
   }));
 }
@@ -10811,35 +10951,39 @@ async function persistSupActionPoints(){
 async function persistSupDraft(){
   if(!state.currentUser || !state.currentUser.mosqueId) return;
   const mosqueId = state.currentUser.mosqueId;
-  await withPendingSync(()=> queueRecordSave(mosqueId, state.supDate, async ()=>{
-    const latest = await loadRecord(mosqueId, state.supDate, true);
-    latest.entryPhoto = supRecord.entryPhoto;
-    latest.exitPhoto = supRecord.exitPhoto;
-    latest.fridgePhoto = supRecord.fridgePhoto;
-    latest.receipt = supRecord.receipt;
-    latest.notesPhoto = supRecord.notesPhoto;
-    latest.customPhotos = supRecord.customPhotos;
-    latest.attendance = supRecord.attendance;
-    latest.attendanceNotes = supRecord.attendanceNotes;
-    latest.attendanceTimestamps = supRecord.attendanceTimestamps;
-    latest.workTimes = supRecord.workTimes;
-    latest.customAttendanceStats = supRecord.customAttendanceStats;
-    latest.waterColdness = supRecord.waterColdness;
-    latest.notes = supRecord.notes;
-    latest.openingStock330 = supRecord.openingStock330;
-    latest.openingStock200 = supRecord.openingStock200;
-    latest.openingStock = supRecord.openingStock;
-    latest.newCartons330 = supRecord.newCartons330;
-    latest.newCartons200 = supRecord.newCartons200;
-    latest.newCartons = supRecord.newCartons;
-    latest.qtyReceived330 = supRecord.qtyReceived330;
-    latest.qtyReceived200 = supRecord.qtyReceived200;
-    latest.qtyReceived = supRecord.qtyReceived;
-    latest.tankerArrival = supRecord.tankerArrival;
-    latest.tankerCount = supRecord.tankerCount;
-    latest.distributionStart = supRecord.distributionStart;
-    latest.distributionEnd = supRecord.distributionEnd;
-    await storageSet(recKey(mosqueId, state.supDate), JSON.stringify(latest));
+  const date = state.supDate; // يُلتقط فورًا مع كل حقول supRecord أدناه، لا عند تنفيذ الحفظ المؤجَّل — منعًا لكتابة يوم فوق آخر إذا تغيّر state.supDate أو supRecord نفسه (بالتنقل بين الأيام) أثناء انتظار الطابور
+  const snapshot = {
+    entryPhoto: supRecord.entryPhoto,
+    exitPhoto: supRecord.exitPhoto,
+    fridgePhoto: supRecord.fridgePhoto,
+    receipt: supRecord.receipt,
+    notesPhoto: supRecord.notesPhoto,
+    customPhotos: supRecord.customPhotos,
+    attendance: supRecord.attendance,
+    attendanceNotes: supRecord.attendanceNotes,
+    attendanceTimestamps: supRecord.attendanceTimestamps,
+    workTimes: supRecord.workTimes,
+    customAttendanceStats: supRecord.customAttendanceStats,
+    waterColdness: supRecord.waterColdness,
+    notes: supRecord.notes,
+    openingStock330: supRecord.openingStock330,
+    openingStock200: supRecord.openingStock200,
+    openingStock: supRecord.openingStock,
+    newCartons330: supRecord.newCartons330,
+    newCartons200: supRecord.newCartons200,
+    newCartons: supRecord.newCartons,
+    qtyReceived330: supRecord.qtyReceived330,
+    qtyReceived200: supRecord.qtyReceived200,
+    qtyReceived: supRecord.qtyReceived,
+    tankerArrival: supRecord.tankerArrival,
+    tankerCount: supRecord.tankerCount,
+    distributionStart: supRecord.distributionStart,
+    distributionEnd: supRecord.distributionEnd,
+  };
+  await withPendingSync(()=> queueRecordSave(mosqueId, date, async ()=>{
+    const latest = await loadRecord(mosqueId, date, true);
+    Object.assign(latest, snapshot);
+    await storageSet(recKey(mosqueId, date), JSON.stringify(latest));
   }));
 }
 function nowTime12raw(){
@@ -11229,7 +11373,7 @@ function renderColdnessRow(){
   });
 }
 function attStateBtn(collabId, kind, current, locked){
-  const active = current===kind;
+  const active = current===kind && kind!=='none'; // حالة "–" (لم يُسجَّل) لا تُعرض أبدًا كأنها "مُختارة" حتى لا تبدو وكأن النظام سجّل شيئًا تلقائيًا؛ فقط حاضر/غائب يُعتبران اختيارًا فعليًا بعد الضغط اليدوي
   const map = {
     present:{cls:'check-circle',icon:'✓'},
     absent:{cls:'cross-circle',icon:'✕'},
@@ -11295,9 +11439,10 @@ async function saveSupervisorRecord(){
   supRecord.gsApprovedAt = '';
   supRecord.gsApprovedBy = '';
   const mosqueId = state.currentUser.mosqueId;
+  const date = state.supDate; // يُلتقط فورًا — لا يُعاد قراءته لاحقًا، منعًا لحفظ هذا التقرير تحت يوم آخر لو تغيّر state.supDate أثناء تنفيذ هذه الدالة
   // merge in any withdrawal entries added concurrently by مسجل بيانات users, so saving here never erases their work
   try{
-    const latest = await loadRecord(mosqueId, state.supDate, true);
+    const latest = await loadRecord(mosqueId, date, true);
     ['withdrawals','tankerWithdrawals'].forEach(key=>{
       const localIds = new Set((supRecord[key]||[]).map(w=>w.id).filter(Boolean));
       (latest[key]||[]).forEach(w=>{
@@ -11305,7 +11450,7 @@ async function saveSupervisorRecord(){
       });
     });
   }catch(e){ /* best-effort merge; proceed with save regardless */ }
-  const ok = await storageSet(recKey(mosqueId, state.supDate), JSON.stringify(supRecord));
+  const ok = await storageSet(recKey(mosqueId, date), JSON.stringify(supRecord));
   btn.disabled = false; btn.textContent = 'حفظ بيانات اليوم';
   if(ok){
     toast('تم حفظ بيانات اليوم بنجاح ✓');
